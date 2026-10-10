@@ -3,6 +3,7 @@ import base64
 import io
 import json
 import os
+import socket
 import subprocess
 import threading
 import time
@@ -68,6 +69,12 @@ class Runtime:
                 return url
             callback("Switching model · freeing GPU memory", 0)
             self.release()
+            for port in ([model['port'], 7893] if model_id == 'qwen-image-2.1' else [model['port']]):
+                with socket.socket() as probe:
+                    try:
+                        probe.bind(('127.0.0.1', port))
+                    except OSError as error:
+                        raise RuntimeError(f'Local worker port {port} is occupied. Close the process using it; Local Atelier will not connect to another installation.') from error
             record = self.store.one("SELECT * FROM models WHERE id=?", (model_id,))
             if not record or not record['verified'] or not installed(model, record["runtime_path"]):
                 raise RuntimeError("Install this model in the model library first")

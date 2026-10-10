@@ -15,6 +15,7 @@ from atelier.app import create_app
 from atelier.catalog import CATALOG
 from atelier.generation import save_image
 from atelier.storage import Store
+from atelier.runtime import Runtime
 
 
 class FakeRuntime:
@@ -102,6 +103,15 @@ class StudioTests(unittest.TestCase):
         self.register_model()
         self.store.execute('UPDATE models SET verified=NULL')
         self.assertEqual(self.client.post('/api/jobs',json=self.request()).status_code,400)
+
+    def test_runtime_never_adopts_an_existing_server(self):
+        runtime=Runtime(self.store)
+        with patch('atelier.runtime.socket.socket') as socket_factory, patch('atelier.runtime.httpx.Client') as client, patch.object(runtime,'_start') as start:
+            socket_factory.return_value.__enter__.return_value.bind.side_effect=OSError('occupied')
+            with self.assertRaisesRegex(RuntimeError,'will not connect to another installation'):
+                runtime.ensure('qwen-image-2.1',lambda *args:None)
+            client.assert_not_called()
+            start.assert_not_called()
 
     def test_upload_keeps_alpha_and_references_out_of_gallery(self):
         asset=self.upload()
