@@ -1,0 +1,10 @@
+transformers==4.57.1
+diffusers>=0.35,<1
+accelerate>=1,<2
+einops>=0.8,<1
+numpy>=2,<3
+tqdm>=4,<5
+scipy>=1.15,<2
+sdnq==0.2.3
+triton-windows==3.7.1.post27; sys_platform == 'win32'
+ninja==1.13.0

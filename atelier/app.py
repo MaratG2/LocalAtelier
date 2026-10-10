@@ -1,0 +1,244 @@
+import io
+import json
+import os
+import shutil
+import subprocess
+import time
+from pathlib import Path
+
+from flask import Flask, jsonify, request, send_from_directory
+from PIL import Image, ImageOps, UnidentifiedImageError
+from werkzeug.exceptions import HTTPException
+
+from .catalog import SERVICES
+from .generation import GenerationQueue, save_image
+from .models import CREATE_FLAGS, ModelManager
+from .runtime import Runtime
+from .storage import Store, identifier, now
+
+
+def object_body():
+    data = request.get_json()
+    if not isinstance(data, dict):
+        raise ValueError("Expected a JSON object")
+    return data
+
+
+def text_field(value, name, limit, empty=False):
+    if not isinstance(value, str) or len(value) > limit or (not empty and not value.strip()):
+        raise ValueError(f"{name} must contain {'0' if empty else '1'}–{limit} characters")
+    return value.strip()
+
+
+def create_app(data_root=None, project_root=None, runtime_factory=Runtime):
+    root = Path(project_root or Path(__file__).resolve().parents[1])
+    store = Store(data_root or root / "data")
+    runtime = runtime_factory(store)
+    models = ModelManager(store, root, runtime)
+    jobs = GenerationQueue(store, runtime, models)
+    app = Flask(__name__, static_folder=None)
+    app.config.update(MAX_CONTENT_LENGTH=26 * 1024 * 1024, TRUSTED_HOSTS=["localhost", "127.0.0.1", "[::1]"])
+    app.extensions.update(store=store, runtime=runtime, models=models, jobs=jobs)
+    hardware = {"at": 0, "value": {}}
+
+    @app.before_request
+    def origin_guard():
+        if request.path.startswith("/api/") and request.method not in {"GET", "HEAD", "OPTIONS"}:
+            origin = request.headers.get("Origin")
+            if origin and origin not in {request.host_url.rstrip("/"), "http://127.0.0.1:5175", "http://localhost:5175"}:
+                return jsonify(error="Cross-origin requests are not allowed"), 403
+
+    @app.errorhandler(ValueError)
+    def invalid(error):
+        return jsonify(error=str(error)), 400
+
+    @app.errorhandler(HTTPException)
+    def http_error(error):
+        return jsonify(error=error.description), error.code
+
+    @app.get("/api/status")
+    def status():
+        if time.monotonic() - hardware["at"] > 5:
+            value = {"gpu_name": None, "gpu_total_mib": 0, "gpu_used_mib": 0, "disk_free_bytes": shutil.disk_usage(root).free}
+            try:
+                output = subprocess.run(["nvidia-smi", "--query-gpu=name,memory.total,memory.used", "--format=csv,noheader,nounits"], capture_output=True, text=True, timeout=3, creationflags=CREATE_FLAGS)
+                name, total, used = output.stdout.splitlines()[0].rsplit(",", 2)
+                value.update(gpu_name=name.strip(), gpu_total_mib=int(total), gpu_used_mib=int(used))
+            except (OSError, ValueError, IndexError, subprocess.TimeoutExpired):
+                pass
+            hardware.update(at=time.monotonic(), value=value)
+        return jsonify(name="Local Atelier", version="0.1.0", hardware=hardware["value"], active_model=runtime.active_model,
+                       runtime_phase=runtime.phase, services=SERVICES, data_path=str(store.root))
+
+    @app.route("/api/projects", methods=["GET", "POST"])
+    def projects_route():
+        if request.method == "GET":
+            return jsonify(store.projects(request.args.get("archived") == "true"))
+        data = object_body()
+        name = text_field(data.get("name"), "Project name", 80)
+        description = text_field(data.get("description", ""), "Description", 1000, empty=True)
+        project_id = identifier()
+        store.execute("INSERT INTO projects(id,name,description,created,updated) VALUES(?,?,?,?,?)", (project_id, name, description, now(), now()))
+        return jsonify(store.project(project_id)), 201
+
+    @app.patch("/api/projects/<project_id>")
+    def project_update(project_id):
+        project = store.project(project_id)
+        if not project:
+            return jsonify(error="Project not found"), 404
+        data = object_body()
+        values = {}
+        for key in data:
+            if key == "name":
+                values[key] = text_field(data[key], "Project name", 80)
+            elif key == "description":
+                values[key] = text_field(data[key], "Description", 1000, empty=True)
+            elif key in {"favorite", "archived"} and isinstance(data[key], bool):
+                values[key] = int(data[key])
+            else:
+                raise ValueError("Unsupported project setting")
+        if values.get("archived"):
+            if project_id == "inbox":
+                raise ValueError("My creations is the default project and cannot be archived")
+            if store.one("SELECT id FROM jobs WHERE project_id=? AND status IN ('queued','running')", (project_id,)):
+                raise ValueError("Wait for the project's active generations before archiving")
+        values["updated"] = now()
+        store.execute(f"UPDATE projects SET {','.join(key+'=?' for key in values)} WHERE id=?", (*values.values(), project_id))
+        return jsonify(store.project(project_id))
+
+    @app.get("/api/assets")
+    def assets_route():
+        filters, params = ["a.kind='generated'", "a.deleted=?", "p.archived=0"], [int(request.args.get("trash") == "true")]
+        if request.args.get("project"):
+            filters.append("a.project_id=?")
+            params.append(request.args["project"])
+        if request.args.get("favorite") == "true":
+            filters.append("a.favorite=1")
+        if request.args.get("q"):
+            filters.append("(a.prompt LIKE ? OR a.name LIKE ?)")
+            params += ["%" + request.args["q"][:200] + "%"] * 2
+        ids = store.all("SELECT a.id FROM assets a JOIN projects p ON p.id=a.project_id WHERE " + " AND ".join(filters) + " ORDER BY a.created DESC LIMIT 500", params)
+        return jsonify([store.asset(row["id"]) for row in ids])
+
+    @app.post("/api/uploads")
+    def upload():
+        project_id = request.form.get("project_id", "inbox")
+        project = store.project(project_id)
+        if not project or project["archived"]:
+            raise ValueError("Select an active project")
+        source = request.files.get("image")
+        if not source:
+            raise ValueError("Choose an image to upload")
+        raw = source.read(24 * 1024 * 1024 + 1)
+        if len(raw) > 24 * 1024 * 1024:
+            raise ValueError("Images must be at most 24 MB")
+        try:
+            with Image.open(io.BytesIO(raw)) as image:
+                if image.format not in {"PNG", "JPEG", "WEBP"} or image.width * image.height > 24_000_000:
+                    raise ValueError("Use PNG, JPEG or WebP up to 24 megapixels")
+                converted = ImageOps.exif_transpose(image).convert("RGBA")
+        except (UnidentifiedImageError, OSError, Image.DecompressionBombError) as error:
+            raise ValueError("The image could not be read") from error
+        return jsonify(save_image(store, converted, project_id, kind="reference", name=(source.filename or "Reference")[:120])), 201
+
+    @app.get("/api/assets/<asset_id>")
+    def asset_details(asset_id):
+        asset = store.asset(asset_id)
+        if not asset or asset["deleted"]:
+            return jsonify(error="Image not found"), 404
+        return jsonify(asset)
+
+    @app.get("/api/assets/<asset_id>/<variant>")
+    def asset_file(asset_id, variant):
+        asset = store.asset(asset_id)
+        if not asset or variant not in {"file", "thumbnail", "metadata"}:
+            return jsonify(error="Image not found"), 404
+        if variant == "metadata":
+            return jsonify({**asset["metadata"], "prompt": asset["prompt"], "model_id": asset["model_id"]})
+        filename = asset["thumbnail"] if variant == "thumbnail" else asset["filename"]
+        return send_from_directory(store.assets, filename, as_attachment=request.args.get("download") == "true", download_name=f"atelier-{asset['seed'] or asset_id[:8]}.png", max_age=86400)
+
+    @app.patch("/api/assets/<asset_id>")
+    def asset_update(asset_id):
+        if not store.asset(asset_id):
+            return jsonify(error="Image not found"), 404
+        data = object_body()
+        values = {}
+        for key, value in data.items():
+            if key in {"favorite", "deleted"} and isinstance(value, bool):
+                values[key] = int(value)
+            elif key == "name":
+                values[key] = text_field(value, "Name", 120)
+            elif key == "project_id" and isinstance(value, str) and store.project(value) and not store.project(value)["archived"]:
+                values[key] = value
+            else:
+                raise ValueError("Unsupported image setting")
+        if values:
+            if values.get("deleted") and store.one("SELECT id FROM jobs WHERE status IN ('queued','running') AND request LIKE ?", (f'%"{asset_id}"%',)):
+                raise ValueError("This image is referenced by a queued or running job")
+            store.execute(f"UPDATE assets SET {','.join(key+'=?' for key in values)} WHERE id=?", (*values.values(), asset_id))
+        return jsonify(store.asset(asset_id))
+
+    @app.route("/api/jobs", methods=["GET", "POST"])
+    def jobs_route():
+        if request.method == "POST":
+            return jsonify(jobs.submit(object_body())), 202
+        ids = store.all("SELECT id FROM jobs ORDER BY created DESC LIMIT 30")
+        return jsonify([store.job(row["id"]) for row in ids])
+
+    @app.post("/api/jobs/<job_id>/cancel")
+    def cancel(job_id):
+        jobs.cancel(job_id)
+        return jsonify(store.job(job_id))
+
+    @app.get("/api/models")
+    def models_route():
+        return jsonify(models.list())
+
+    @app.post("/api/models/<model_id>/<action>")
+    def model_operation(model_id, action):
+        return jsonify(models.start(model_id, action)), 202
+
+    @app.delete("/api/models/<model_id>")
+    def model_remove(model_id):
+        from .catalog import CATALOG
+        if model_id not in CATALOG or object_body().get("confirmation") != CATALOG[model_id]["name"]:
+            raise ValueError("Confirm the model name before removing it")
+        models.remove(model_id)
+        return jsonify(ok=True)
+
+    @app.route("/api/settings", methods=["GET", "PATCH"])
+    def settings():
+        if request.method == "PATCH":
+            data = object_body()
+            if set(data) - {"low_vram", "unload_after_job"} or any(not isinstance(v, bool) for v in data.values()):
+                raise ValueError("Unsupported runtime setting")
+            if store.one("SELECT id FROM jobs WHERE status IN ('queued','running') LIMIT 1"):
+                raise ValueError("Wait for queued generations before changing runtime settings")
+            runtime.release()
+            for key, value in data.items():
+                store.set_setting(key, value)
+        return jsonify(low_vram=store.setting("low_vram", False), unload_after_job=store.setting("unload_after_job", False))
+
+    @app.post("/api/runtime/release")
+    def release():
+        if store.one("SELECT id FROM jobs WHERE status IN ('queued','running') LIMIT 1"):
+            raise ValueError("Wait for queued generations before releasing the GPU")
+        runtime.release()
+        return jsonify(ok=True)
+
+    @app.get("/api/runtime/logs")
+    def logs():
+        return jsonify(runtime.logs())
+
+    @app.get("/")
+    @app.get("/<path:path>")
+    def frontend(path=""):
+        if path.startswith("api/"):
+            return jsonify(error="Endpoint not found"), 404
+        dist = root / "frontend/dist"
+        if not (dist / "index.html").exists():
+            return "Build the frontend with npm run build in frontend/", 503
+        return send_from_directory(dist, path if path and (dist / path).is_file() else "index.html")
+
+    return app

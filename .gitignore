@@ -1,0 +1,16 @@
+.venv/
+/data/
+/models/
+.runtime/
+.design/
+.env
+__pycache__/
+*.py[cod]
+node_modules/
+dist/
+*.tsbuildinfo
+frontend/vite.config.js
+frontend/vite.config.d.ts
+*.log
+*.safetensors
+*.gguf
