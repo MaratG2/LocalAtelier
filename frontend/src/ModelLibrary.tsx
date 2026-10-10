@@ -62,7 +62,9 @@ export function ModelLibrary({
     setError("");
     setDialog({ model, action });
   };
-  const serviceModels = snapshot.models.filter(m => service === "all" || m.service === service);
+  const serviceModels = snapshot.models.filter(
+    (m) => service === "all" || m.service === service,
+  );
   const models = serviceModels.filter(
     (m) => filter === "all" || m.status === "installed",
   );
@@ -110,7 +112,16 @@ export function ModelLibrary({
             </span>
           </button>
         </div>
-        <select aria-label="Model service" value={service} onChange={e => setService(e.target.value)}><option value="all">All services</option><option value="images">Images</option><option value="3d">3D objects</option></select>
+        <select
+          aria-label="Model service"
+          value={service}
+          onChange={(e) => setService(e.target.value)}
+        >
+          <option value="all">All services</option>
+          <option value="images">Images</option>
+          <option value="3d">3D objects</option>
+          <option value="video">Video</option>
+        </select>
       </div>
       {error && !dialog ? (
         <div className="error-banner" role="alert">
@@ -124,7 +135,13 @@ export function ModelLibrary({
               <div
                 className={`model-avatar ${m.family === "HiDream" ? "earth" : ""}`}
               >
-                {m.family === "Qwen" ? "Q" : m.service === "3d" ? "3D" : "H"}
+                {m.family === "Qwen"
+                  ? "Q"
+                  : m.service === "3d"
+                    ? "3D"
+                    : m.service === "video"
+                      ? "H3"
+                      : "H"}
               </div>
               <div className="model-heading">
                 <div>
@@ -156,11 +173,13 @@ export function ModelLibrary({
               </span>
               <span>
                 <strong>
-                  {m.service === "3d"
-                    ? "Mesh + PBR"
-                    : m.transparent
-                      ? "Native RGBA"
-                      : "RGB"}
+                  {m.service === "video"
+                    ? "Video + stereo"
+                    : m.service === "3d"
+                      ? "Mesh + PBR"
+                      : m.transparent
+                        ? "Native RGBA"
+                        : "RGB"}
                 </strong>{" "}
                 output
               </span>
@@ -293,7 +312,7 @@ export function ModelLibrary({
           <strong>Room to grow</strong>
           <p>
             More local models and creative tools can join the same projects and
-            asset library. Video and audio adapters are planned.
+            asset library. Standalone audio generation is planned.
           </p>
         </div>
       </div>
@@ -326,8 +345,8 @@ export function ModelLibrary({
               <p>
                 This permanently deletes the runtime and downloaded weights
                 owned by Local Atelier ({bytes(dialog.model.size_bytes)}).
-                Project images and meshes remain in your library. You can install the model
-                again later.
+                Project images, meshes and clips remain in your library. You can
+                install the model again later.
               </p>
             )}
             {error ? (

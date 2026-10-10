@@ -22,6 +22,7 @@ import { ModelLibrary } from "./ModelLibrary";
 import { Settings } from "./Settings";
 import type { Project, Snapshot, Model, Job, Status } from "./types";
 const MeshStudio = lazy(() => import("./MeshStudio"));
+const VideoStudio = lazy(() => import("./VideoStudio"));
 
 export default function App() {
   const [route, setRoute] = useState(location.pathname);
@@ -113,6 +114,7 @@ export default function App() {
     { path: "/", label: "Home", icon: HomeIcon },
     { path: "/images", label: "Images", icon: ImageIcon },
     { path: "/3d", label: "3D studio", icon: Box },
+    { path: "/video", label: "Video", icon: Film },
     { path: "/projects", label: "Projects", icon: Folder },
     { path: "/models", label: "Model library", icon: Layers },
   ];
@@ -165,10 +167,7 @@ export default function App() {
         </nav>
         <div className="nav-section">
           <span className="section-label">Future tools</span>
-          {[
-            [Film, "Video"],
-            [AudioLines, "Audio"],
-          ].map(([Icon, label]) => {
+          {[[AudioLines, "Audio"]].map(([Icon, label]) => {
             const I = Icon as typeof Box;
             return (
               <button
@@ -176,7 +175,7 @@ export default function App() {
                 className="future-nav"
                 onClick={() => {
                   setNotice(
-                    `${label} is planned. Image generation is available now.`,
+                    `${label} is planned. Images, 3D and video are available now.`,
                   );
                   setMobileNav(false);
                 }}
@@ -267,6 +266,18 @@ export default function App() {
         ) : route === "/3d" ? (
           <Suspense fallback={<Loading />}>
             <MeshStudio
+              key={currentProject}
+              snapshot={snapshot}
+              projectId={currentProject}
+              onProject={pickProject}
+              navigate={navigate}
+              notify={notify}
+              refresh={load}
+            />
+          </Suspense>
+        ) : route === "/video" ? (
+          <Suspense fallback={<Loading />}>
+            <VideoStudio
               key={currentProject}
               snapshot={snapshot}
               projectId={currentProject}

@@ -218,6 +218,12 @@ export function Projects({
                     >
                       3D objects
                     </button>
+                    <button
+                      className="text-link"
+                      onClick={() => navigate("/video", p.id)}
+                    >
+                      Video studio
+                    </button>
                   </div>
                 )}
                 <footer>

@@ -28,6 +28,9 @@ def weights_at(model, root):
 def installed(model, root):
     root = Path(root)
     weights = weights_at(model, root)
+    if model["id"] == "vdn-h3":
+        from .video_install import complete
+        return complete(root)
     if model["id"] == "trellis2":
         from .trellis_install import runtime_valid
         return (root / ".runtime-ready").is_file() and runtime_valid(root) and all((weights / name).is_file() for name in model["files"])
@@ -111,8 +114,8 @@ class ModelManager:
         except Exception as error:
             operation.update(status="error", phase="Needs attention", error=str(error))
 
-    def _run(self, operation, args, cwd):
-        env = {**os.environ, "PYTHONUTF8": "1", "PYTHONIOENCODING": "utf-8", "HF_HUB_DISABLE_XET": "1", "HF_HUB_DISABLE_TELEMETRY": "1"}
+    def _run(self, operation, args, cwd, env=None):
+        env = env or {**os.environ, "PYTHONUTF8": "1", "PYTHONIOENCODING": "utf-8", "HF_HUB_DISABLE_XET": "1", "HF_HUB_DISABLE_TELEMETRY": "1"}
         process = subprocess.Popen([str(a) for a in args], cwd=cwd, env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                                    text=True, encoding="utf-8", errors="replace", creationflags=CREATE_FLAGS)
         for line in process.stdout:
@@ -140,6 +143,11 @@ class ModelManager:
         marker.write_text(json.dumps({"model_id": model_id}), encoding="utf-8")
         root = bundle
         self.store.execute("INSERT OR REPLACE INTO models(id,source,runtime_path,linked) VALUES(?,?,?,?)", (model_id, "managed", str(root), now()))
+        if model_id == "vdn-h3":
+            from .video_install import install
+            install(root, lambda args, cwd, env: self._run(operation, args, cwd, env),
+                    lambda phase, value: self._update(operation, phase, value))
+            return
         if model_id == "trellis2":
             from .trellis_install import install_runtime
             install_runtime(root, lambda phase, value: self._update(operation, phase, value))
@@ -207,6 +215,11 @@ class ModelManager:
         model = CATALOG[model_id]
         record = self.record(model_id)
         root = Path(record["runtime_path"])
+        if model_id == "vdn-h3":
+            from .video_install import verify
+            verification = verify(root, lambda phase, value: self._update(operation, phase, value))
+            self.store.execute("UPDATE models SET verified=?,verification=? WHERE id=?", (now(), json.dumps(verification), model_id))
+            return
         self._update(operation, "Reading publisher manifest")
         files = self._hub_files(model)
         total = sum(f.size or 0 for f in files)

@@ -1,6 +1,6 @@
 # Architecture
 
-Local Atelier separates the project library from GPU inference. The Flask application owns an SQLite database and image/mesh files. React consumes its JSON API. A single generation queue turns validated requests into persistent jobs and calls one selected worker at a time.
+Local Atelier separates the project library from GPU inference. The Flask application owns an SQLite database and image/mesh/video files. React consumes its JSON API. A single generation queue turns validated requests into persistent jobs and calls one selected worker at a time.
 
 ## 3D service
 
@@ -11,6 +11,14 @@ Local Atelier separates the project library from GPU inference. The Flask applic
 `POST /api/meshes/jobs` accepts image-to-3D, text-to-3D and simplification requests. `POST /api/meshes/import` imports embedded GLBs. `/api/meshes/<id>/export?format=...` and `/textures/<name>` expose controlled output formats and whitelisted maps. `GET /api/assets?kind=mesh` returns mesh assets, while the default endpoint continues to return generated images. The schema stores mesh-specific details in existing asset/job JSON fields, preserving previous projects without a destructive migration.
 
 `MeshStudio.tsx` composes the form, project assets and export/details dialogs. `MeshViewer.tsx` owns a Three.js renderer and orbit controls, with local procedural environment lighting and no CDN requests. The 3D route is loaded on demand. The browser can replace the initial CPU thumbnail with a bounded PNG rendered from the actual mesh; no generated concept mockup is used as an output preview.
+
+## Video service
+
+`atelier/videos.py` validates H3 requests and owns bounded media inspection, reference uploads, posters and filmstrips. `atelier/providers/vdn_h3.py` starts the pinned FreeVideo CLI inside its model bundle, monitors coordinator and worker event logs, and terminates only the owned process tree on cancellation. Preview assets retain their first-pass tensors; finishing produces a new asset with locked original settings. No hosted prompt service or external generator is used.
+
+`atelier/video_install.py` installs an owned Python 3.12 environment and pinned source trees; `atelier/manifests/vdn-h3.json` lists 1,201 hashed model/config/table files. Prepared INT8 weights avoid full BF16 conversion. ComfyUI is used only as the encoder library inside a child process. Shared GPU serialization prevents H3 from overlapping image or mesh inference.
+
+`POST /api/videos/jobs` accepts text, frames, references and finish requests. `POST /api/videos/uploads` validates short reference media. `GET /api/assets?kind=video` lists generated clips. Asset file responses support browser range requests; `/api/videos/<id>/filmstrip` returns sampled frames and `/audio` decodes a stereo WAV download. The React VideoStudio route is lazy loaded.
 
 ## Model lifecycle
 
@@ -37,7 +45,7 @@ The main application does not import Torch. Each worker imports only its own pro
 3. Extend `atelier/worker.py` and runtime startup for that provider. Return a Pillow image, metadata and real progress callbacks; propagate failures explicitly.
 4. Exercise install, verify, delete, cold startup, model switching, reference handling, and real GPU inference on the target hardware.
 
-The catalog is intentionally code-reviewed rather than an arbitrary executable plugin loader. New media types will also need asset delivery and editing surfaces appropriate to their format. The current image-specific persistence fields are not a completed 3D/video/audio implementation.
+The catalog is intentionally code-reviewed rather than an arbitrary executable plugin loader. New media types will also need asset delivery and editing surfaces appropriate to their format. Images, meshes and video share the asset table; a future standalone audio service needs its own validation and workspace.
 
 ## Boundaries
 
@@ -46,4 +54,4 @@ The catalog is intentionally code-reviewed rather than an arbitrary executable p
 - The gallery returns the newest 500 matching assets; pagination is future work.
 - Ten Qwen/eight HiDream references are accepted by the interface, but the upper limit is not a performance promise on a 16 GB card.
 - Trashing does not erase images from disk. Permanent asset purging is not implemented.
-- Model verification needs the publisher's online manifest. Offline generation needs an already installed model.
+- Image and TRELLIS verification uses the publisher's online manifest; H3 ships a pinned manifest and verifies files locally. Offline generation needs an installed, verified model.

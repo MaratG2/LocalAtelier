@@ -19,7 +19,7 @@ export interface Operation {
   error: string | null;
 }
 export interface Model {
-  service: "images" | "3d";
+  service: "images" | "3d" | "video";
   id: string;
   name: string;
   family: string;
@@ -58,7 +58,7 @@ export interface GenerationRequest {
   transparent_background: boolean;
 }
 export interface Asset {
-  kind: "generated" | "reference" | "mesh";
+  kind: "generated" | "reference" | "mesh" | "video" | "media-reference";
   id: string;
   project_id: string;
   name: string;
@@ -89,7 +89,7 @@ export interface Job {
   completed: number;
   error: string | null;
   result_ids: string[];
-  request: GenerationRequest | MeshRequest;
+  request: GenerationRequest | MeshRequest | VideoRequest;
   created: number;
 }
 export interface MeshRequest {
@@ -106,6 +106,22 @@ export interface MeshRequest {
   texture: boolean;
   background_removal: "auto" | "birefnet";
   source_mesh_id?: string;
+}
+export interface VideoRequest {
+  project_id: string;
+  model_id: "vdn-h3";
+  mode: "text" | "frames" | "references" | "finish";
+  prompt: string;
+  quality: "light" | "medium" | "high" | "max";
+  width: number;
+  height: number;
+  seconds: number;
+  seed: number;
+  preview: boolean;
+  first_id?: string | null;
+  last_id?: string | null;
+  reference_ids: string[];
+  source_video_id?: string;
 }
 export interface MeshStats {
   triangles: number;

@@ -67,7 +67,7 @@ def create_app(data_root=None, project_root=None, runtime_factory=Runtime):
             except (OSError, ValueError, IndexError, subprocess.TimeoutExpired):
                 pass
             hardware.update(at=time.monotonic(), value=value)
-        return jsonify(name="Local Atelier", version="0.2.0", hardware=hardware["value"], active_model=runtime.active_model,
+        return jsonify(name="Local Atelier", version="0.3.0", hardware=hardware["value"], active_model=runtime.active_model,
                        runtime_phase=runtime.phase, services=SERVICES, data_path=str(store.root))
 
     @app.route("/api/projects", methods=["GET", "POST"])
@@ -109,9 +109,9 @@ def create_app(data_root=None, project_root=None, runtime_factory=Runtime):
     @app.get("/api/assets")
     def assets_route():
         kind = request.args.get("kind", "image")
-        if kind not in {"image", "mesh", "all"}:
+        if kind not in {"image", "mesh", "video", "all"}:
             raise ValueError("Unknown asset type")
-        kinds = {"image": "a.kind='generated'", "mesh": "a.kind='mesh'", "all": "a.kind IN ('generated','mesh')"}
+        kinds = {"image": "a.kind='generated'", "mesh": "a.kind='mesh'", "video": "a.kind='video'", "all": "a.kind IN ('generated','mesh','video')"}
         filters, params = [kinds[kind], "a.deleted=?", "p.archived=0"], [int(request.args.get("trash") == "true")]
         if request.args.get("project"):
             filters.append("a.project_id=?")
@@ -160,8 +160,50 @@ def create_app(data_root=None, project_root=None, runtime_factory=Runtime):
         if variant == "metadata":
             return jsonify({**asset["metadata"], "prompt": asset["prompt"], "model_id": asset["model_id"]})
         filename = asset["thumbnail"] if variant == "thumbnail" else asset["filename"]
-        extension = "glb" if asset["kind"] == "mesh" and variant == "file" else "png"
+        extension = Path(filename).suffix.lstrip('.')
         return send_from_directory(store.assets, filename, as_attachment=request.args.get("download") == "true", download_name=f"atelier-{asset['seed'] or asset_id[:8]}.{extension}", max_age=86400)
+
+    @app.post('/api/videos/jobs')
+    def video_jobs():
+        return jsonify(jobs.submit(object_body(), video=True)), 202
+
+    @app.post('/api/videos/uploads')
+    def video_upload():
+        from .videos import upload_media
+        project_id = request.form.get('project_id', 'inbox')
+        project = store.project(project_id)
+        if not project or project['archived']:
+            raise ValueError('Select an active project')
+        source = request.files.get('media')
+        if not source:
+            raise ValueError('Choose a media file')
+        return jsonify(upload_media(store, source, project_id)), 201
+
+    @app.get('/api/videos/<asset_id>/filmstrip')
+    def video_filmstrip(asset_id):
+        asset = store.asset(asset_id)
+        if not asset or asset['kind'] != 'video':
+            return jsonify(error='Video not found'), 404
+        return send_from_directory(store.assets / asset_id, 'filmstrip.jpg', max_age=86400)
+
+    @app.get('/api/videos/<asset_id>/audio')
+    def video_audio(asset_id):
+        import av
+        import wave
+        asset = store.asset(asset_id)
+        if not asset or asset['kind'] != 'video' or not asset['metadata'].get('has_audio'):
+            return jsonify(error='Audio not found'), 404
+        buffer = io.BytesIO()
+        with av.open(str(store.assets / asset['filename'])) as container, wave.open(buffer, 'wb') as output:
+            output.setnchannels(2); output.setsampwidth(2); output.setframerate(32000)
+            resampler = av.AudioResampler(format='s16', layout='stereo', rate=32000)
+            for frame in container.decode(audio=0):
+                for converted in resampler.resample(frame):
+                    output.writeframes(converted.to_ndarray().tobytes())
+            for converted in resampler.resample(None):
+                output.writeframes(converted.to_ndarray().tobytes())
+        buffer.seek(0)
+        return send_file(buffer, mimetype='audio/wav', as_attachment=True, download_name=f'atelier-{asset_id[:8]}.wav')
 
     @app.post("/api/meshes/jobs")
     def mesh_jobs():
@@ -242,7 +284,7 @@ def create_app(data_root=None, project_root=None, runtime_factory=Runtime):
                 raise ValueError("Unsupported image setting")
         if values:
             if values.get("deleted") and store.one("SELECT id FROM jobs WHERE status IN ('queued','running') AND request LIKE ?", (f'%"{asset_id}"%',)):
-                raise ValueError("This image is referenced by a queued or running job")
+                raise ValueError("This asset is referenced by a queued or running job")
             store.execute(f"UPDATE assets SET {','.join(key+'=?' for key in values)} WHERE id=?", (*values.values(), asset_id))
         return jsonify(store.asset(asset_id))
 

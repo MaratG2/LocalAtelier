@@ -43,7 +43,7 @@ def validate(data, store):
         raise ValueError("Create needs no references, Edit needs one, and References needs at least one")
     for ref in refs:
         asset = store.asset(ref)
-        if not asset or asset["deleted"] or asset["kind"] == "mesh":
+        if not asset or asset["deleted"] or asset["kind"] not in {"generated", "reference"}:
             raise ValueError("A reference image is unavailable")
     request = {"project_id": project["id"], "model_id": model_id, "mode": mode, "prompt": prompt.strip(), "reference_ids": refs}
     for name, default, low, high in [("width", 1024, 512, model["max_size"]), ("height", 1024, 512, model["max_size"]),
@@ -90,8 +90,11 @@ class GenerationQueue:
         self.lock = threading.Lock()
         threading.Thread(target=self._work, daemon=True).start()
 
-    def submit(self, data, mesh=False):
-        if mesh:
+    def submit(self, data, mesh=False, video=False):
+        if video:
+            from .videos import validate_video
+            request = validate_video(data, self.store)
+        elif mesh:
             from .mesh_jobs import validate_mesh
             request = validate_mesh(data, self.store)
         else:
@@ -121,7 +124,7 @@ class GenerationQueue:
             raise ValueError("Job not found")
         if job["status"] in {"queued", "running"}:
             self.cancelled.add(job_id)
-            phase = "Stopping generation" if job["model_id"] == "trellis2" else "Stopping after the current image"
+            phase = "Stopping generation" if job["model_id"] in {"trellis2", "vdn-h3"} else "Stopping after the current image"
             self.store.update_job(job_id, phase=phase if job["status"] == "running" else "Cancelled")
             if job["status"] == "queued":
                 self.store.update_job(job_id, status="cancelled")
@@ -136,6 +139,14 @@ class GenerationQueue:
                     continue
                 request = job["request"]
                 self.store.update_job(job_id, status="running", phase="Preparing")
+                if request["model_id"] == "vdn-h3":
+                    from .providers.vdn_h3 import generate
+                    def video_progress(phase, value):
+                        if job_id not in self.cancelled:
+                            self.store.update_job(job_id, phase=phase, progress=value)
+                    asset = generate(self.runtime, request, video_progress, lambda: job_id in self.cancelled)
+                    self.store.update_job(job_id, completed=1, result_ids=json.dumps([asset['id']]), status='complete', phase='Complete', progress=100)
+                    continue
                 if request["model_id"] == "trellis2":
                     from .mesh_jobs import run_mesh_job
                     def mesh_progress(phase, value):

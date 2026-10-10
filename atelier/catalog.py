@@ -1,5 +1,14 @@
 """Trusted model adapters. Add future providers here, without changing projects."""
 CATALOG = {
+    "vdn-h3": {
+        "id": "vdn-h3", "name": "VDN-H3 · MiniMax H3", "family": "MiniMax H3", "service": "video",
+        "description": "Local video with stereo sound, keyframes and multimodal references. Preview first, then finish at full resolution.",
+        "precision": "INT8 ConvRot · NVFP4 encoder", "download_gb": 56.7, "vram_gb": 16,
+        "license": "MiniMax H3 Community License", "license_url": "https://huggingface.co/OpenVDN/vdn-minimax-h3/blob/751739ee5b9e3ac802dca5d5111075fdaeb47885/LICENSE",
+        "hub_repo": "OpenVDN/vdn-minimax-h3-edge", "hub_revision": "da37681f5a1f7015fdb63482142b865111b687d3",
+        "weight_dir": "weights", "port": None, "steps": 8, "max_steps": 20,
+        "max_references": 12, "transparent": False, "max_size": 1344, "files": [],
+    },
     "trellis2": {
         "id": "trellis2", "name": "TRELLIS.2", "family": "TRELLIS", "service": "3d",
         "description": "Image-to-3D with textured geometry and native PBR materials. One reference, a complete object.",
@@ -38,6 +47,6 @@ CATALOG = {
 SERVICES = [
     {"id": "images", "name": "Images", "available": True, "description": "Create, edit and combine references."},
     {"id": "3d", "name": "3D studio", "available": True, "description": "Create textured objects with TRELLIS.2."},
-    {"id": "video", "name": "Video", "available": False, "description": "Give your ideas a sense of motion."},
+    {"id": "video", "name": "Video", "available": True, "description": "Create video and sound with MiniMax H3."},
     {"id": "audio", "name": "Audio", "available": False, "description": "Sound, speech and music on your machine."},
 ]

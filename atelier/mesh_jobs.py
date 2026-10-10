@@ -34,7 +34,7 @@ def validate_mesh(data, store):
         raise ValueError("Image-to-3D needs one image; text-to-3D creates its own reference")
     for ref in refs:
         asset = store.asset(ref)
-        if not asset or asset["deleted"] or asset["kind"] == "mesh":
+        if not asset or asset["deleted"] or asset["kind"] not in {"generated", "reference"}:
             raise ValueError("Choose an available reference image")
     request = {"project_id": project_id, "model_id": "trellis2", "mode": mode, "prompt": prompt.strip(), "reference_ids": refs, "batch_size": 1}
     for key, default, lo, hi in [("seed", 42, 0, 4294967295), ("num_inference_steps", 12, 4, 30),

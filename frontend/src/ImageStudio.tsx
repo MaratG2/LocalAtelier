@@ -793,12 +793,20 @@ export function ImageStudio({
                   Edit this image
                 </button>
                 {!selected.deleted && (
-                  <a
-                    className="secondary"
-                    href={`/3d?project=${selected.project_id}&image=${selected.id}`}
-                  >
-                    Create a 3D object
-                  </a>
+                  <>
+                    <a
+                      className="secondary"
+                      href={`/3d?project=${selected.project_id}&image=${selected.id}`}
+                    >
+                      Create a 3D object
+                    </a>
+                    <a
+                      className="secondary"
+                      href={`/video?project=${selected.project_id}&image=${selected.id}`}
+                    >
+                      Animate image
+                    </a>
+                  </>
                 )}
                 <button
                   className="secondary"

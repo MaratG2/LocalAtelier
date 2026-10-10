@@ -21,7 +21,7 @@ The real queue exercised Qwen → HiDream → Qwen switching. The earlier worker
 
 ## Automated and browser checks
 
-- 33 API/runtime tests passed. The original 21 cover project archive/restore, asset recovery, PNG metadata and alpha persistence, validation, queue bounds and cancellation, active-reference protection, model-operation exclusion, owned deletion, tamper detection, refusal of unverified weights, origin/host guards, and refusal to adopt an occupied worker port. Twelve mesh tests add embedded GLB validation, actual geometry/material persistence, six export formats, image/text queue flows, model/reference protection, cancellation, simplification lineage, texture routes and bounded rendered previews. GPU inference is replaced with explicit fixtures in these unit tests.
+- 43 API/runtime tests passed. The original 21 cover project archive/restore, asset recovery, PNG metadata and alpha persistence, validation, queue bounds and cancellation, active-reference protection, model-operation exclusion, owned deletion, tamper detection, refusal of unverified weights, origin/host guards, and refusal to adopt an occupied worker port. Twelve mesh tests add embedded GLB validation, actual geometry/material persistence, six export formats, image/text queue flows, model/reference protection, cancellation, simplification lineage, texture routes and bounded rendered previews. Ten video tests add frame alignment, preset/mode constraints, bounded media uploads, reference duration limits, preview continuation, parent protection, progress parsing, queue registration, H3 checksum failure and Windows cleanup after a worker log closes. GPU inference is replaced with explicit fixtures in these unit tests.
 - TypeScript and Vite production build passed. The GitHub workflow repeats API tests and frontend compilation without GPU dependencies.
 - In-app browser smoke checks covered the real home, project and image studio screens. Its viewport override did not hold the requested size, so regular Playwright Chromium checked explicit 1536×1024 and 390×844 viewports.
 - Browser interaction checks passed: create/rename/pin/archive/restore project; favorite, list view, image details, PNG download, trash and restore; search and settings reuse; reference upload; model-delete dialog cancellation; diagnostics; mobile navigation and seed controls.
@@ -57,6 +57,37 @@ The final visual comparison retained the accepted concept's light/forest-green p
 
 [Mobile capture](screenshots/mesh-mobile.png)
 
+## VDN-H3 GPU checks
+
+Installed 56,658 MB of pinned model data (1,201 files) inside `models/vdn-h3`, with an owned Python 3.12 interpreter and CUDA environment. Full model checksums passed, as did native encoder import and SageAttention, cuDNN, linear and INT8 kernel probes. Runtime Git revisions and the patched Diffusers tree matched their pins. The optional Torch Flash backend was unavailable; the runtime selected SageAttention 2.
+
+The default Light pipeline was exercised through the production application at `127.0.0.1:7870`. The first clip depicts a paper sailboat on a pond. All outputs below use actual H3 inference with stereo audio; no fixture or procedural generator runs in the production provider.
+
+| Case | Actual output | Provider elapsed time | Sampled total GPU memory |
+|---|---|---:|---:|
+| Text preview, cold kernels | 448×256, 124 frames, 24 fps | 362.97 s | 15,352 MiB |
+| Finish that preview | 896×512, 124 frames, 24 fps | 231.80 s | 14,953 MiB |
+| First-frame teapot preview | 448×256, 73 frames, 24 fps | 255.35 s | 15,228 MiB |
+| Video/audio-reference preview | 448×256, 56 frames, 24 fps | 237.67 s | 15,099 MiB |
+
+Provider times include process startup, encoding where needed, sampling and media inspection, but exclude time waiting in the queue and final thumbnail registration. These are individual observations with other desktop applications open, not repeatable warm benchmarks. Total GPU memory was sampled about every two seconds with `nvidia-smi`; it includes the desktop/browser and can miss short spikes. None of these four completed runs encountered an out-of-memory error.
+
+The finish receipt reports `first_pass_reused: true`: it reused the saved conditioning and eight-step pass, then performed the three-step refinement. Both MP4s decoded to 124 distinct frames. Audio decoded successfully as two channels at 32 kHz with nonzero signal. WAV exports retained stereo and the sample rate. The original preview and its continuation tensors remain available. Container duration is 5.175 seconds, including audio padding, versus 124/24 = 5.167 seconds of video.
+
+The first-frame test used an existing burgundy teapot image from the local image studio. It produced a moving view of that teapot, with the reference's shape and glossy material visibly retained. The native encoder reported the image-to-video/audio task, and the saved clip contains stereo audio. This is a single image-conditioning example, not a consistency benchmark across subjects.
+
+The reference test selected the earlier boat preview, including its sound, through the project picker. The native engine ran `ref2va_av` and produced a new 56-frame clip with nonzero stereo audio. Both reference tests decoded to distinct frames throughout. Separate audio-only references, last-frame-only conditioning and paired first/last conditioning remain untested on the GPU; their request validation is covered, and the adapter passes those inputs to the native runtime.
+
+Real cancellation stopped a running encoder job in 1.13 seconds, registered no result, released the active model and left no native Python workers. It exposed a Windows cleanup race: an 834-byte encoder log remained after its process exited. Cleanup now retries briefly for delayed file-handle release; a regression test holding an actual Windows file open passed. The final retry has not yet been rechecked in a native cancellation run because the running server still needs a restart.
+
+### Video interface verification
+
+The live in-app browser exercised real playback, **Finish preview**, image-conditioned **Generate preview**, and selection of a generated clip as a video/audio reference. Regular Playwright Chromium checked explicit 1536×1024 and 390×844 viewports after the in-app viewport override failed to hold the requested size. The dedicated Browser plugin was not available.
+
+Live production checks passed for page identity, meaningful content, absence of framework error overlays, console health, play/pause, seek, volume, mute, favorite toggling and settings reuse. All MP4, WAV, PNG and JSON export routes returned 200; MP4 byte-range delivery returned 206. Neither viewport had horizontal overflow. An isolated, clearly labeled playback fixture also covered quality/preview compatibility, frame controls, reference picker/removal and export UI before the model finished downloading. That fixture is not in the real project library.
+
+The design comparison preserves the concept's four-column desktop arrangement, forest-green/ivory palette, compact type hierarchy, settings spacing, large video player and five-frame strip. Real clips retain their actual aspect ratio. Light replaces the concept's Medium default because only Light supports preview continuation. Aligned duration, model attribution, native quality descriptions and prompt labels for queued jobs add factual context. Downloads use one format-selection dialog; result actions sit below the player. Mobile stacks the settings, player and project rail. Control borders, heights, volume adjustment and queue labels were corrected during verification.
+
 ## Scope of these results
 
-Maximum-reference-count image jobs, all aspect ratios, 2K Qwen exports, all mesh settings, and other GPUs/drivers were not exhaustively tested in this application. Mesh quality was visually checked on the teapot and chest; this does not establish general reconstruction quality or printing readiness. Model capabilities in the catalog are not speed or memory guarantees for every setting. Video and audio remain planned. GPU inference is not run in GitHub CI. See the [3D guide](3d-studio.md) for unsupported workflows and export limits.
+Maximum-reference-count jobs, all aspect ratios, 2K Qwen exports, all mesh settings, larger H3 canvases, longer H3 clips, higher H3 step presets, and other GPUs/drivers were not exhaustively tested in this application. Mesh quality was visually checked on the teapot and chest; this does not establish general reconstruction quality or printing readiness. Audio signal checks do not establish dialogue or lip-sync quality. Model capabilities in the catalog are not speed or memory guarantees for every setting. Standalone audio generation remains planned; LTX is deferred. GPU inference is not run in GitHub CI. See the [3D guide](3d-studio.md) and [video guide](video-studio.md) for workflow limits.

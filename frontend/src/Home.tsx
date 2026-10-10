@@ -60,7 +60,7 @@ export function Home({
           {
             name: "Video",
             icon: Film,
-            description: "Turn ideas into video using local models.",
+            description: "Create video and stereo sound with MiniMax H3.",
           },
           {
             name: "Audio",
@@ -75,8 +75,13 @@ export function Home({
             <div>
               <div className="service-title">
                 <h3>{name}</h3>
-                {name === "3D studio" ? (
-                  <button className="text-link" onClick={() => navigate("/3d")}>
+                {name === "3D studio" || name === "Video" ? (
+                  <button
+                    className="text-link"
+                    onClick={() =>
+                      navigate(name === "Video" ? "/video" : "/3d")
+                    }
+                  >
                     Open studio <ArrowRight size={15} />
                   </button>
                 ) : (

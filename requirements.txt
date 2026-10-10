@@ -5,3 +5,4 @@ huggingface-hub>=0.36,<2
 python-dotenv>=1,<2
 numpy>=2.2,<3
 trimesh==4.12.2
+av==18.1.0
