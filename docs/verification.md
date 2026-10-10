@@ -13,6 +13,7 @@ Both models were installed into new, isolated environments under this repository
 | Qwen composition using both preceding images | 25 | 1024×1024 | 82.87 s |
 | Qwen background removal using a landscape reference | 25 | 1024×704 RGBA | 36.80 s |
 | HiDream text-to-image, blue cup | 50 | 1024×1024 export from 2048×2048 inference | 325.20 s |
+| HiDream reference edit, recolor the vase | 12 | 1024×1024 export from 2048×2048 inference | 124.95 s |
 
 Times include prompt/reference encoding, inference and result decoding/transfer after the worker is ready; they exclude process startup. These are individual observations, not averaged benchmarks. Cold startup took several minutes in newly created environments. HiDream used PyTorch SDPA attention, with its vocabulary tables offloaded to CPU. The Qwen transparent result had alpha extrema 0 and 255; it was not an opaque image with a drawn checkerboard. Reference aspect ratios are rounded to the model's 64-pixel grid.
 

@@ -4,6 +4,8 @@ A local creative workspace for your own GPU. Organize projects, create images, e
 
 The application is free and MIT licensed. Inference uses your hardware; no hosted inference account or usage credits are required. Model weights have their own licenses, including the Qwen Research License.
 
+![Local Atelier image studio with locally generated results](docs/screenshots/studio.png)
+
 ## What works
 
 - Light studio interface with Home, Images, Projects, Model library, and Settings.
@@ -83,4 +85,4 @@ npm run dev
 
 The frontend development server binds to 127.0.0.1:5175 and proxies `/api` to the local API. The production application serves the built frontend directly. CI checks the API and frontend without downloading weights or requiring a GPU.
 
-See [architecture](docs/architecture.md) for provider extension points and [third-party notices](THIRD_PARTY_NOTICES.md) for licenses. This release is a single-user, localhost desktop service; it has no remote account or multi-user server layer.
+See [architecture](docs/architecture.md) for provider extension points, [hardware and browser checks](docs/verification.md) for measured results, and [third-party notices](THIRD_PARTY_NOTICES.md) for licenses. This release is a single-user, localhost desktop service; it has no remote account or multi-user server layer.
