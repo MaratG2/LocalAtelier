@@ -25,6 +25,7 @@ export function ModelLibrary({
   notify: (s: string) => void;
 }) {
   const [filter, setFilter] = useState("all");
+  const [service, setService] = useState("all");
   const [dialog, setDialog] = useState<{
     model: Model;
     action: "install" | "remove";
@@ -61,7 +62,8 @@ export function ModelLibrary({
     setError("");
     setDialog({ model, action });
   };
-  const models = snapshot.models.filter(
+  const serviceModels = snapshot.models.filter(m => service === "all" || m.service === service);
+  const models = serviceModels.filter(
     (m) => filter === "all" || m.status === "installed",
   );
   return (
@@ -96,7 +98,7 @@ export function ModelLibrary({
             className={filter === "all" ? "active" : ""}
             onClick={() => setFilter("all")}
           >
-            All models <span>{snapshot.models.length}</span>
+            All models <span>{serviceModels.length}</span>
           </button>
           <button
             className={filter === "installed" ? "active" : ""}
@@ -104,11 +106,11 @@ export function ModelLibrary({
           >
             Installed{" "}
             <span>
-              {snapshot.models.filter((m) => m.status === "installed").length}
+              {serviceModels.filter((m) => m.status === "installed").length}
             </span>
           </button>
         </div>
-        <span className="muted-text">Image models · 16 GB profiles</span>
+        <select aria-label="Model service" value={service} onChange={e => setService(e.target.value)}><option value="all">All services</option><option value="images">Images</option><option value="3d">3D objects</option></select>
       </div>
       {error && !dialog ? (
         <div className="error-banner" role="alert">
@@ -122,7 +124,7 @@ export function ModelLibrary({
               <div
                 className={`model-avatar ${m.family === "HiDream" ? "earth" : ""}`}
               >
-                {m.family === "Qwen" ? "Q" : "H"}
+                {m.family === "Qwen" ? "Q" : m.service === "3d" ? "3D" : "H"}
               </div>
               <div className="model-heading">
                 <div>
@@ -153,7 +155,14 @@ export function ModelLibrary({
                 <strong>{m.max_references}</strong> references
               </span>
               <span>
-                <strong>{m.transparent ? "Native RGBA" : "RGB"}</strong> output
+                <strong>
+                  {m.service === "3d"
+                    ? "Mesh + PBR"
+                    : m.transparent
+                      ? "Native RGBA"
+                      : "RGB"}
+                </strong>{" "}
+                output
               </span>
             </div>
             <div className="model-details">
@@ -284,7 +293,7 @@ export function ModelLibrary({
           <strong>Room to grow</strong>
           <p>
             More local models and creative tools can join the same projects and
-            asset library. 3D, video and audio adapters are planned.
+            asset library. Video and audio adapters are planned.
           </p>
         </div>
       </div>
@@ -317,7 +326,7 @@ export function ModelLibrary({
               <p>
                 This permanently deletes the runtime and downloaded weights
                 owned by Local Atelier ({bytes(dialog.model.size_bytes)}).
-                Project images remain in your library. You can install the model
+                Project images and meshes remain in your library. You can install the model
                 again later.
               </p>
             )}

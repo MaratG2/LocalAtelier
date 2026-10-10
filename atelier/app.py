@@ -6,7 +6,7 @@ import subprocess
 import time
 from pathlib import Path
 
-from flask import Flask, jsonify, request, send_from_directory
+from flask import Flask, jsonify, request, send_from_directory, send_file
 from PIL import Image, ImageOps, UnidentifiedImageError
 from werkzeug.exceptions import HTTPException
 
@@ -37,7 +37,7 @@ def create_app(data_root=None, project_root=None, runtime_factory=Runtime):
     models = ModelManager(store, root, runtime)
     jobs = GenerationQueue(store, runtime, models)
     app = Flask(__name__, static_folder=None)
-    app.config.update(MAX_CONTENT_LENGTH=26 * 1024 * 1024, TRUSTED_HOSTS=["localhost", "127.0.0.1", "[::1]"])
+    app.config.update(MAX_CONTENT_LENGTH=66 * 1024 * 1024, TRUSTED_HOSTS=["localhost", "127.0.0.1", "[::1]"])
     app.extensions.update(store=store, runtime=runtime, models=models, jobs=jobs)
     hardware = {"at": 0, "value": {}}
 
@@ -67,7 +67,7 @@ def create_app(data_root=None, project_root=None, runtime_factory=Runtime):
             except (OSError, ValueError, IndexError, subprocess.TimeoutExpired):
                 pass
             hardware.update(at=time.monotonic(), value=value)
-        return jsonify(name="Local Atelier", version="0.1.0", hardware=hardware["value"], active_model=runtime.active_model,
+        return jsonify(name="Local Atelier", version="0.2.0", hardware=hardware["value"], active_model=runtime.active_model,
                        runtime_phase=runtime.phase, services=SERVICES, data_path=str(store.root))
 
     @app.route("/api/projects", methods=["GET", "POST"])
@@ -108,7 +108,11 @@ def create_app(data_root=None, project_root=None, runtime_factory=Runtime):
 
     @app.get("/api/assets")
     def assets_route():
-        filters, params = ["a.kind='generated'", "a.deleted=?", "p.archived=0"], [int(request.args.get("trash") == "true")]
+        kind = request.args.get("kind", "image")
+        if kind not in {"image", "mesh", "all"}:
+            raise ValueError("Unknown asset type")
+        kinds = {"image": "a.kind='generated'", "mesh": "a.kind='mesh'", "all": "a.kind IN ('generated','mesh')"}
+        filters, params = [kinds[kind], "a.deleted=?", "p.archived=0"], [int(request.args.get("trash") == "true")]
         if request.args.get("project"):
             filters.append("a.project_id=?")
             params.append(request.args["project"])
@@ -156,7 +160,70 @@ def create_app(data_root=None, project_root=None, runtime_factory=Runtime):
         if variant == "metadata":
             return jsonify({**asset["metadata"], "prompt": asset["prompt"], "model_id": asset["model_id"]})
         filename = asset["thumbnail"] if variant == "thumbnail" else asset["filename"]
-        return send_from_directory(store.assets, filename, as_attachment=request.args.get("download") == "true", download_name=f"atelier-{asset['seed'] or asset_id[:8]}.png", max_age=86400)
+        extension = "glb" if asset["kind"] == "mesh" and variant == "file" else "png"
+        return send_from_directory(store.assets, filename, as_attachment=request.args.get("download") == "true", download_name=f"atelier-{asset['seed'] or asset_id[:8]}.{extension}", max_age=86400)
+
+    @app.post("/api/meshes/jobs")
+    def mesh_jobs():
+        return jsonify(jobs.submit(object_body(), mesh=True)), 202
+
+    @app.post("/api/meshes/import")
+    def mesh_import():
+        from .meshes import save_mesh
+        project_id = request.form.get("project_id", "inbox")
+        project = store.project(project_id)
+        if not project or project["archived"]:
+            raise ValueError("Select an active project")
+        source = request.files.get("mesh")
+        if not source:
+            raise ValueError("Choose a GLB file")
+        raw = source.read(64 * 1024 * 1024 + 1)
+        if len(raw) > 64 * 1024 * 1024:
+            raise ValueError("Use a GLB smaller than 64 MB")
+        asset = save_mesh(store, raw, project_id, name=Path(source.filename or "Imported mesh").stem[:120], model_id=None, metadata={"imported": True})
+        return jsonify(asset), 201
+
+    def mesh_asset(asset_id):
+        asset = store.asset(asset_id)
+        if not asset or asset["kind"] != "mesh" or asset["deleted"]:
+            raise ValueError("Mesh not found")
+        return asset
+
+    @app.get("/api/meshes/<asset_id>/export")
+    def mesh_export(asset_id):
+        from .meshes import export_mesh
+        asset = mesh_asset(asset_id)
+        data, extension, mime = export_mesh(store, asset, request.args.get("format", "glb"))
+        return send_file(io.BytesIO(data), mimetype=mime, as_attachment=True, download_name=f"atelier-{asset_id[:8]}.{extension}")
+
+    @app.get("/api/meshes/<asset_id>/textures/<name>")
+    def mesh_texture(asset_id, name):
+        asset = mesh_asset(asset_id)
+        if name not in {item["name"] for item in asset["metadata"].get("textures", [])}:
+            return jsonify(error="Texture not found"), 404
+        return send_from_directory(store.assets / asset_id, name, max_age=86400)
+
+    @app.post("/api/meshes/<asset_id>/preview")
+    def mesh_preview(asset_id):
+        asset = mesh_asset(asset_id)
+        source = request.files.get("image")
+        if not source:
+            raise ValueError("A preview image is required")
+        raw = source.read(4 * 1024 * 1024 + 1)
+        if len(raw) > 4 * 1024 * 1024:
+            raise ValueError("Preview is too large")
+        try:
+            with Image.open(io.BytesIO(raw)) as image:
+                if image.format != "PNG" or image.width > 1024 or image.height > 1024:
+                    raise ValueError("Use a PNG preview up to 1024 pixels")
+                preview = image.convert("RGB")
+                preview.thumbnail((512, 512))
+                preview.save(store.assets / asset["thumbnail"], "PNG")
+        except (UnidentifiedImageError, OSError, Image.DecompressionBombError) as error:
+            raise ValueError("Invalid preview image") from error
+        metadata = {**asset["metadata"], "preview_rendered": True, "preview_updated": now()}
+        store.execute("UPDATE assets SET metadata=? WHERE id=?", (json.dumps(metadata), asset_id))
+        return jsonify(ok=True)
 
     @app.patch("/api/assets/<asset_id>")
     def asset_update(asset_id):

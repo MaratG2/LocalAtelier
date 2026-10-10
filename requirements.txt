@@ -3,3 +3,5 @@ httpx>=0.28,<1
 pillow>=11
 huggingface-hub>=0.36,<2
 python-dotenv>=1,<2
+numpy>=2.2,<3
+trimesh==4.12.2

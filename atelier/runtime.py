@@ -131,6 +131,10 @@ class Runtime:
                 time.sleep(0.5)
         raise RuntimeError("Model startup timed out. See Settings → runtime logs.")
 
+    def generate_mesh(self, request, reference, callback, cancelled):
+        from .providers.trellis2 import generate
+        return generate(self, request, reference, callback, cancelled)
+
     def generate(self, request, references, callback):
         model_id = request["model_id"]
         url = self.ensure(model_id, callback)

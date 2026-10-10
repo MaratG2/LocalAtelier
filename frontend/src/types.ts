@@ -19,6 +19,7 @@ export interface Operation {
   error: string | null;
 }
 export interface Model {
+  service: "images" | "3d";
   id: string;
   name: string;
   family: string;
@@ -57,6 +58,7 @@ export interface GenerationRequest {
   transparent_background: boolean;
 }
 export interface Asset {
+  kind: "generated" | "reference" | "mesh";
   id: string;
   project_id: string;
   name: string;
@@ -87,8 +89,36 @@ export interface Job {
   completed: number;
   error: string | null;
   result_ids: string[];
-  request: GenerationRequest;
+  request: GenerationRequest | MeshRequest;
   created: number;
+}
+export interface MeshRequest {
+  project_id: string;
+  model_id: "trellis2";
+  mode: "image-to-3d" | "text-to-3d" | "simplify";
+  prompt: string;
+  reference_ids: string[];
+  seed: number;
+  num_inference_steps: number;
+  resolution: number;
+  texture_size: number;
+  target_triangles: number;
+  texture: boolean;
+  background_removal: "auto" | "birefnet";
+  source_mesh_id?: string;
+}
+export interface MeshStats {
+  triangles: number;
+  vertices: number;
+  materials: number;
+  has_uv: boolean;
+  bounds: number[];
+}
+export interface MeshTexture {
+  name: string;
+  channel: string;
+  width: number;
+  height: number;
 }
 export interface Status {
   name: string;

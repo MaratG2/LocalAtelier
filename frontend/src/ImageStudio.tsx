@@ -71,7 +71,9 @@ export function ImageStudio({
   const [prompt, setPrompt] = useState<string>(draft.prompt || "");
   const [modelId, setModelId] = useState<string>(
     draft.modelId ||
-      snapshot.models.find((m) => m.status === "installed")?.id ||
+      snapshot.models.find(
+        (m) => m.service === "images" && m.status === "installed",
+      )?.id ||
       "qwen-image-2.1",
   );
   const [mode, setMode] = useState<GenerationRequest["mode"]>("t2i");
@@ -95,7 +97,9 @@ export function ImageStudio({
   const uploader = useRef<HTMLInputElement>(null);
   const promptInput = useRef<HTMLTextAreaElement>(null);
   const model = snapshot.models.find((m) => m.id === modelId);
-  const jobs = snapshot.jobs.filter((j) => j.project_id === projectId);
+  const jobs = snapshot.jobs.filter(
+    (j) => j.project_id === projectId && j.model_id !== "trellis2",
+  );
   const active = jobs.filter((j) => ACTIVE.has(j.status));
   const latest = jobs[0];
   const completedKey = jobs
@@ -561,16 +565,18 @@ export function ImageStudio({
               value={modelId}
               onChange={(e) => changeModel(e.target.value)}
             >
-              {snapshot.models.map((m) => (
-                <option
-                  key={m.id}
-                  value={m.id}
-                  disabled={m.status !== "installed"}
-                >
-                  {m.name}
-                  {m.status !== "installed" ? " · not installed" : ""}
-                </option>
-              ))}
+              {snapshot.models
+                .filter((m) => m.service === "images")
+                .map((m) => (
+                  <option
+                    key={m.id}
+                    value={m.id}
+                    disabled={m.status !== "installed"}
+                  >
+                    {m.name}
+                    {m.status !== "installed" ? " · not installed" : ""}
+                  </option>
+                ))}
               <option value="manage">Manage models…</option>
             </select>
           </label>
@@ -786,6 +792,14 @@ export function ImageStudio({
                   <Pencil size={16} />
                   Edit this image
                 </button>
+                {!selected.deleted && (
+                  <a
+                    className="secondary"
+                    href={`/3d?project=${selected.project_id}&image=${selected.id}`}
+                  >
+                    Create a 3D object
+                  </a>
+                )}
                 <button
                   className="secondary"
                   onClick={() => void reuse(selected)}

@@ -1,5 +1,17 @@
 """Trusted model adapters. Add future providers here, without changing projects."""
 CATALOG = {
+    "trellis2": {
+        "id": "trellis2", "name": "TRELLIS.2", "family": "TRELLIS", "service": "3d",
+        "description": "Image-to-3D with textured geometry and native PBR materials. One reference, a complete object.",
+        "precision": "GGUF Q8 · CUDA", "download_gb": 10.0, "vram_gb": 16,
+        "license": "MIT · DINOv3 license", "license_url": "https://github.com/microsoft/TRELLIS.2#license",
+        "hub_repo": "ilintar/trellis2-gguf", "hub_revision": "a57397bd3d351599d9729fc144b3f87c3f87d65b",
+        "weight_dir": "weights", "port": None, "steps": 12, "max_steps": 30,
+        "max_references": 1, "transparent": False, "max_size": 1024,
+        "files": ["q8/" + name + ".gguf" for name in (
+            "birefnet", "dinov3", "ss_flow", "ss_dec", "shape_flow_512", "shape_flow_1024",
+            "shape_dec", "tex_flow_512", "tex_flow_1024", "tex_dec")],
+    },
     "qwen-image-2.1": {
         "id": "qwen-image-2.1", "name": "Qwen-Image-2.1", "family": "Qwen", "service": "images",
         "description": "Precise creation, multi-image composition and native transparent backgrounds.",
@@ -25,7 +37,7 @@ CATALOG = {
 
 SERVICES = [
     {"id": "images", "name": "Images", "available": True, "description": "Create, edit and combine references."},
-    {"id": "3d", "name": "3D objects", "available": False, "description": "From a concept to something dimensional."},
+    {"id": "3d", "name": "3D studio", "available": True, "description": "Create textured objects with TRELLIS.2."},
     {"id": "video", "name": "Video", "available": False, "description": "Give your ideas a sense of motion."},
     {"id": "audio", "name": "Audio", "available": False, "description": "Sound, speech and music on your machine."},
 ]

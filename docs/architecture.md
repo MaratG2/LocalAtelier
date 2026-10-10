@@ -1,6 +1,16 @@
 # Architecture
 
-Local Atelier separates the project library from GPU inference. The Flask application owns an SQLite database and image files. React consumes its JSON API. A single generation queue turns validated requests into persistent jobs and calls one selected worker at a time.
+Local Atelier separates the project library from GPU inference. The Flask application owns an SQLite database and image/mesh files. React consumes its JSON API. A single generation queue turns validated requests into persistent jobs and calls one selected worker at a time.
+
+## 3D service
+
+`atelier/mesh_jobs.py` validates and executes mesh jobs through the same queue as images. Text jobs reserve both Qwen and TRELLIS.2 against model deletion/verification, save their concept image, then switch the GPU to mesh generation. `atelier/providers/trellis2.py` owns the native CUDA CLI process, reports its seven stages, handles cancellation and requires GPU execution. `atelier/trellis_install.py` downloads and verifies the pinned release; no other application installation or server is discovered.
+
+`atelier/meshes.py` reads embedded GLBs, saves mesh assets and actual material maps, creates a geometry preview, and exports portable formats. `frontend/scripts/simplify.mjs` performs attribute-aware simplification with glTF Transform and meshoptimizer. Models and project data stay separate; deleting a model never removes generated meshes.
+
+`POST /api/meshes/jobs` accepts image-to-3D, text-to-3D and simplification requests. `POST /api/meshes/import` imports embedded GLBs. `/api/meshes/<id>/export?format=...` and `/textures/<name>` expose controlled output formats and whitelisted maps. `GET /api/assets?kind=mesh` returns mesh assets, while the default endpoint continues to return generated images. The schema stores mesh-specific details in existing asset/job JSON fields, preserving previous projects without a destructive migration.
+
+`MeshStudio.tsx` composes the form, project assets and export/details dialogs. `MeshViewer.tsx` owns a Three.js renderer and orbit controls, with local procedural environment lighting and no CDN requests. The 3D route is loaded on demand. The browser can replace the initial CPU thumbnail with a bounded PNG rendered from the actual mesh; no generated concept mockup is used as an output preview.
 
 ## Model lifecycle
 

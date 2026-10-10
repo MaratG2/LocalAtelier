@@ -84,8 +84,8 @@ class Store:
         return self.one("SELECT * FROM projects WHERE id=?", (project_id,))
 
     def projects(self, archived=False):
-        return self.all('''SELECT p.*, (SELECT COUNT(*) FROM assets a WHERE a.project_id=p.id AND a.kind='generated' AND a.deleted=0) AS asset_count,
-            (SELECT id FROM assets a WHERE a.project_id=p.id AND a.kind='generated' AND a.deleted=0 ORDER BY created DESC LIMIT 1) AS cover_id
+        return self.all('''SELECT p.*, (SELECT COUNT(*) FROM assets a WHERE a.project_id=p.id AND a.kind IN ('generated','mesh') AND a.deleted=0) AS asset_count,
+            (SELECT id FROM assets a WHERE a.project_id=p.id AND a.kind IN ('generated','mesh') AND a.deleted=0 ORDER BY created DESC LIMIT 1) AS cover_id
             FROM projects p WHERE archived=? ORDER BY p.favorite DESC, p.updated DESC''', (int(archived),))
 
     def asset(self, asset_id):
@@ -94,6 +94,8 @@ class Store:
             row["metadata"] = json.loads(row["metadata"])
             row["url"] = f"/api/assets/{asset_id}/file"
             row["thumbnail_url"] = f"/api/assets/{asset_id}/thumbnail"
+            if row["kind"] == "mesh" and row["metadata"].get("preview_updated"):
+                row["thumbnail_url"] += f"?v={row['metadata']['preview_updated']}"
         return row
 
     def job(self, job_id):

@@ -11,3 +11,9 @@ Local Atelier's application code is MIT licensed; see LICENSE. Dependencies and 
 - The decorative vase photograph used on Home was generated for this application. It is an interface asset, not a benchmark of either local model. Gallery images shown while using the application are actual locally generated assets.
 
 Model files and dependency environments are not distributed in this Git repository.
+
+- The 3D workflow and geometry normalization conventions draw on [felippeomgt/mymeshy](https://github.com/felippeomgt/mymeshy), revision `1854487f1e6c918becc859850727bc83d9ad24cd`, MIT © 2026 Felippe. Its notice is in `licenses/MyMeshy-MIT.txt`. No legacy model adapters or procedural generation fallback are included.
+- [TRELLIS.2](https://github.com/microsoft/TRELLIS.2) is Microsoft's image-to-3D model. Its MIT license is in `licenses/Trellis2-MIT.txt`. Local Atelier downloads the Q8 conversions from [ilintar/trellis2-gguf](https://huggingface.co/ilintar/trellis2-gguf), with the exact revision and file list in the catalog.
+- [trellis.cpp](https://github.com/pwilkin/trellis.cpp), MIT © 2026 Piotr Wilkin, supplies the separately downloaded native CUDA runtime. Its notice is in `licenses/TrellisCPP-MIT.txt`. The runtime is pinned by release and archive SHA-256. Its GGML, xatlas, CUDA runtime and other dependencies retain their upstream licenses.
+- DINOv3 image conditioning retains the [DINOv3 license](https://github.com/facebookresearch/dinov3/blob/main/LICENSE.md), copied to `licenses/DINOv3.txt`. BiRefNet background-removal weights retain their [upstream MIT license](https://github.com/ZhengPeng7/BiRefNet). Local Atelier's application license does not relicense either component.
+- Three.js, glTF Transform, meshoptimizer, trimesh and NumPy retain their installed package licenses. glTF Transform and meshoptimizer simplify geometry while preserving embedded materials and UV attributes.

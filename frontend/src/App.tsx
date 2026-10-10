@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { lazy, Suspense, useCallback, useEffect, useState } from "react";
 import {
   Home as HomeIcon,
   Image as ImageIcon,
@@ -21,6 +21,7 @@ import { ImageStudio } from "./ImageStudio";
 import { ModelLibrary } from "./ModelLibrary";
 import { Settings } from "./Settings";
 import type { Project, Snapshot, Model, Job, Status } from "./types";
+const MeshStudio = lazy(() => import("./MeshStudio"));
 
 export default function App() {
   const [route, setRoute] = useState(location.pathname);
@@ -111,6 +112,7 @@ export default function App() {
   const nav = [
     { path: "/", label: "Home", icon: HomeIcon },
     { path: "/images", label: "Images", icon: ImageIcon },
+    { path: "/3d", label: "3D studio", icon: Box },
     { path: "/projects", label: "Projects", icon: Folder },
     { path: "/models", label: "Model library", icon: Layers },
   ];
@@ -164,7 +166,6 @@ export default function App() {
         <div className="nav-section">
           <span className="section-label">Future tools</span>
           {[
-            [Box, "3D"],
             [Film, "Video"],
             [AudioLines, "Audio"],
           ].map(([Icon, label]) => {
@@ -263,6 +264,18 @@ export default function App() {
             notify={notify}
             refresh={load}
           />
+        ) : route === "/3d" ? (
+          <Suspense fallback={<Loading />}>
+            <MeshStudio
+              key={currentProject}
+              snapshot={snapshot}
+              projectId={currentProject}
+              onProject={pickProject}
+              navigate={navigate}
+              notify={notify}
+              refresh={load}
+            />
+          </Suspense>
         ) : route === "/models" ? (
           <ModelLibrary snapshot={snapshot} refresh={load} notify={notify} />
         ) : route === "/settings" ? (

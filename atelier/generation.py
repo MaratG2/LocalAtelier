@@ -27,7 +27,7 @@ def validate(data, store):
     if not project or project["archived"]:
         raise ValueError("Select an active project")
     model_id = data.get("model_id")
-    if not isinstance(model_id, str) or model_id not in CATALOG:
+    if not isinstance(model_id, str) or model_id not in CATALOG or CATALOG[model_id]["service"] != "images":
         raise ValueError("Select a supported image model")
     model = CATALOG[model_id]
     prompt = data.get("prompt", "")
@@ -43,7 +43,7 @@ def validate(data, store):
         raise ValueError("Create needs no references, Edit needs one, and References needs at least one")
     for ref in refs:
         asset = store.asset(ref)
-        if not asset or asset["deleted"]:
+        if not asset or asset["deleted"] or asset["kind"] == "mesh":
             raise ValueError("A reference image is unavailable")
     request = {"project_id": project["id"], "model_id": model_id, "mode": mode, "prompt": prompt.strip(), "reference_ids": refs}
     for name, default, low, high in [("width", 1024, 512, model["max_size"]), ("height", 1024, 512, model["max_size"]),
@@ -90,14 +90,22 @@ class GenerationQueue:
         self.lock = threading.Lock()
         threading.Thread(target=self._work, daemon=True).start()
 
-    def submit(self, data):
-        request = validate(data, self.store)
+    def submit(self, data, mesh=False):
+        if mesh:
+            from .mesh_jobs import validate_mesh
+            request = validate_mesh(data, self.store)
+        else:
+            request = validate(data, self.store)
         with self.models.lock, self.lock:
-            if self.models.busy(request["model_id"]):
-                raise ValueError("Wait for this model's installation or verification to finish")
-            record = self.models.record(request["model_id"])
-            if not record or not record['verified']:
-                raise ValueError("Install and verify the selected model first")
+            required = [] if request["mode"] == "simplify" else [request["model_id"]]
+            if request.get("image_model_id"):
+                required.append(request["image_model_id"])
+            for model_id in required:
+                if self.models.busy(model_id):
+                    raise ValueError("Wait for this model's installation or verification to finish")
+                record = self.models.record(model_id)
+                if not record or not record['verified']:
+                    raise ValueError(f"Install and verify {CATALOG[model_id]['name']} first")
             count = self.store.one("SELECT COUNT(*) AS count FROM jobs WHERE status IN ('queued','running')")["count"]
             if count >= 4:
                 raise ValueError("The queue is full. Wait for a generation to finish")
@@ -113,7 +121,8 @@ class GenerationQueue:
             raise ValueError("Job not found")
         if job["status"] in {"queued", "running"}:
             self.cancelled.add(job_id)
-            self.store.update_job(job_id, phase="Stopping after the current image" if job["status"] == "running" else "Cancelled")
+            phase = "Stopping generation" if job["model_id"] == "trellis2" else "Stopping after the current image"
+            self.store.update_job(job_id, phase=phase if job["status"] == "running" else "Cancelled")
             if job["status"] == "queued":
                 self.store.update_job(job_id, status="cancelled")
 
@@ -127,6 +136,14 @@ class GenerationQueue:
                     continue
                 request = job["request"]
                 self.store.update_job(job_id, status="running", phase="Preparing")
+                if request["model_id"] == "trellis2":
+                    from .mesh_jobs import run_mesh_job
+                    def mesh_progress(phase, value):
+                        if job_id not in self.cancelled:
+                            self.store.update_job(job_id, phase=phase, progress=value)
+                    asset = run_mesh_job(self, job_id, request, mesh_progress)
+                    self.store.update_job(job_id, completed=1, result_ids=json.dumps([asset["id"]]), status="complete", phase="Complete", progress=100)
+                    continue
                 refs = [self.store.assets / self.store.asset(ref)["filename"] for ref in request["reference_ids"]]
                 for index in range(request["batch_size"]):
                     if job_id in self.cancelled:
@@ -144,7 +161,8 @@ class GenerationQueue:
                 status = "cancelled" if job_id in self.cancelled else "complete"
                 self.store.update_job(job_id, status=status, phase="Stopped" if status == "cancelled" else "Complete", progress=100 if status == "complete" else self.store.job(job_id)["progress"])
             except Exception as error:
-                self.store.update_job(job_id, status="error", phase="Generation failed", error=str(error)[:3000])
+                stopped = job_id in self.cancelled
+                self.store.update_job(job_id, status="cancelled" if stopped else "error", phase="Stopped" if stopped else "Generation failed", error=None if stopped else str(error)[:3000])
             finally:
                 if self.store.setting("unload_after_job", False):
                     self.runtime.release()

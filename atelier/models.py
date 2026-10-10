@@ -28,6 +28,9 @@ def weights_at(model, root):
 def installed(model, root):
     root = Path(root)
     weights = weights_at(model, root)
+    if model["id"] == "trellis2":
+        from .trellis_install import runtime_valid
+        return (root / ".runtime-ready").is_file() and runtime_valid(root) and all((weights / name).is_file() for name in model["files"])
     if not python_at(root).is_file() or not (root / ".runtime-ready").is_file():
         return False
     if model["files"]:
@@ -52,7 +55,7 @@ class ModelManager:
         return any(op["model_id"] == model_id and op["status"] == "running" for op in self.operations.values())
 
     def in_use(self, model_id):
-        return self.store.one("SELECT id FROM jobs WHERE model_id=? AND status IN ('queued','running') LIMIT 1", (model_id,)) is not None
+        return self.store.one("SELECT id FROM jobs WHERE (model_id=? OR json_extract(request,'$.image_model_id')=?) AND status IN ('queued','running') LIMIT 1", (model_id, model_id)) is not None
 
     def list(self):
         result = []
@@ -60,7 +63,7 @@ class ModelManager:
             record = self.record(model_id)
             root = Path(record["runtime_path"]) if record else None
             complete = installed(model, root) and bool(record['verified']) if root else False
-            size = sum(p.stat().st_size for p in weights_at(model, root).rglob("*.safetensors")) if root and root.exists() else 0
+            size = sum(p.stat().st_size for p in weights_at(model, root).rglob("*") if p.is_file() and p.suffix in {".safetensors", ".gguf"}) if root and root.exists() else 0
             item = {key: value for key, value in model.items() if key not in {"files", "hub_revision", "port", "weight_dir"}}
             item.update(status="installed" if complete else "incomplete" if record else "not_installed",
                         source=record["source"] if record else None, runtime_path=str(root) if root else None,
@@ -137,6 +140,12 @@ class ModelManager:
         marker.write_text(json.dumps({"model_id": model_id}), encoding="utf-8")
         root = bundle
         self.store.execute("INSERT OR REPLACE INTO models(id,source,runtime_path,linked) VALUES(?,?,?,?)", (model_id, "managed", str(root), now()))
+        if model_id == "trellis2":
+            from .trellis_install import install_runtime
+            install_runtime(root, lambda phase, value: self._update(operation, phase, value))
+            (root / ".runtime-ready").write_text("Pinned native CUDA runtime", encoding="utf-8")
+            self._download_weights(operation, model, root)
+            return
         comfy = root / ".runtime/ComfyUI"
         if model_id == "qwen-image-2.1" and not (comfy / "main.py").is_file():
             self._update(operation, "Downloading ComfyUI engine")
@@ -171,6 +180,9 @@ class ModelManager:
             self._run(operation, [uv, "pip", "install", "--python", python_at(root), "-r", self.project_root / "requirements-hidream.txt"], root)
         self._run(operation, [python_at(root), "-c", "import torch; assert torch.cuda.is_available(), 'CUDA unavailable'; assert 'sm_120' in torch.cuda.get_arch_list(), 'RTX 5060 Ti support missing'"], root)
         (root / ".runtime-ready").write_text("GPU dependencies installed", encoding="utf-8")
+        self._download_weights(operation, model, root)
+
+    def _download_weights(self, operation, model, root):
         self._update(operation, "Downloading model weights")
         from huggingface_hub import hf_hub_download
         files = self._hub_files(model)
@@ -219,6 +231,11 @@ class ModelManager:
             manifest.append({"name": file.rfilename, "hash": expected, "size": path.stat().st_size})
         if not installed(model, root):
             raise RuntimeError("Weights verified, but runtime dependencies are incomplete; repair the installation")
+        if model_id == "trellis2":
+            from .trellis_install import runtime_valid
+            self._update(operation, "Verifying CUDA runtime", 99)
+            if not runtime_valid(root, verify=True):
+                raise RuntimeError("TRELLIS.2 runtime integrity mismatch; repair the installation")
         verification = {"repo": model["hub_repo"], "revision": model["hub_revision"], "files": manifest, "bytes": checked}
         self.store.execute("UPDATE models SET verified=?,verification=? WHERE id=?", (now(), json.dumps(verification), model_id))
 

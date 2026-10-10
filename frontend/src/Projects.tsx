@@ -126,7 +126,7 @@ export function Projects({
       <header className="page-head">
         <div>
           <h1>Projects</h1>
-          <p>A place for every idea, from first draft to final image.</p>
+          <p>A place for every idea, from first draft to finished asset.</p>
         </div>
         <button className="primary" onClick={onNew}>
           <Plus size={18} />
@@ -181,7 +181,7 @@ export function Projects({
                 ) : (
                   <Folder size={42} strokeWidth={1.1} />
                 )}
-                <span>{p.asset_count || 0} images</span>
+                <span>{p.asset_count || 0} assets</span>
               </button>
               <div className="project-card-body">
                 <div className="project-card-title">
@@ -204,6 +204,22 @@ export function Projects({
                   </button>
                 </div>
                 <p>{p.description || "A little space for your next idea."}</p>
+                {!archived && (
+                  <div className="project-service-links">
+                    <button
+                      className="text-link"
+                      onClick={() => navigate("/images", p.id)}
+                    >
+                      Images
+                    </button>
+                    <button
+                      className="text-link"
+                      onClick={() => navigate("/3d", p.id)}
+                    >
+                      3D objects
+                    </button>
+                  </div>
+                )}
                 <footer>
                   <span>Updated {date(p.updated)}</span>
                   <div>
@@ -224,7 +240,7 @@ export function Projects({
                             { archived: !archived },
                             archived
                               ? "Project restored"
-                              : "Project archived; images are kept",
+                              : "Project archived; assets are kept",
                           )
                         }
                       >
@@ -262,7 +278,7 @@ export function Projects({
           description={
             query
               ? "Try another name."
-              : "Keep related images and ideas together."
+              : "Keep related images, objects and ideas together."
           }
         >
           <button className="secondary" onClick={onNew}>

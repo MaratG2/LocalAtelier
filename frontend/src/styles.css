@@ -1,4 +1,5 @@
 @import url("./tokens.css");
+.project-service-links { display: flex; gap: 18px; margin: 13px 0; font-size: 12px; }
 * {
   box-sizing: border-box;
 }

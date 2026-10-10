@@ -52,9 +52,10 @@ export function Home({
       <div className="future-services">
         {[
           {
-            name: "3D objects",
+            name: "3D studio",
             icon: Box,
-            description: "Generate and edit 3D objects with local models.",
+            description:
+              "Turn an image or idea into a textured object with TRELLIS.2.",
           },
           {
             name: "Video",
@@ -74,7 +75,13 @@ export function Home({
             <div>
               <div className="service-title">
                 <h3>{name}</h3>
-                <span className="badge muted">Planned</span>
+                {name === "3D studio" ? (
+                  <button className="text-link" onClick={() => navigate("/3d")}>
+                    Open studio <ArrowRight size={15} />
+                  </button>
+                ) : (
+                  <span className="badge muted">Planned</span>
+                )}
               </div>
               <p>{description}</p>
             </div>
@@ -107,7 +114,7 @@ export function Home({
                   <strong>{p.name}</strong>
                   <small>
                     {p.asset_count || 0}{" "}
-                    {(p.asset_count || 0) === 1 ? "image" : "images"}
+                    {(p.asset_count || 0) === 1 ? "asset" : "assets"}
                   </small>
                 </span>
                 <ChevronRight size={17} />
