@@ -48,6 +48,7 @@ class ModelManager:
         self.owned_root.mkdir(exist_ok=True)
         self.lock = threading.RLock()
         self.operations = {}
+        self.accepting = True
 
     def record(self, model_id):
         if model_id not in CATALOG:
@@ -78,6 +79,8 @@ class ModelManager:
         return result
 
     def _assert_idle(self, model_id):
+        if not self.accepting:
+            raise ValueError('Local Atelier is updating. Try again in a moment.')
         self.record(model_id)
         if self.busy(model_id) or self.in_use(model_id):
             raise ValueError("Wait for this model's current operation or generation to finish")

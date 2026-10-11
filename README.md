@@ -36,14 +36,20 @@ Requirements: a recent NVIDIA driver, a CUDA-capable NVIDIA GPU, [uv](https://do
 git clone https://github.com/MaratG2/LocalAtelier.git
 cd LocalAtelier
 ./setup.ps1
-./start.ps1
+./Start.cmd
 ```
 
-If local script execution is restricted, run `powershell -NoProfile -ExecutionPolicy Bypass -File .\setup.ps1` for setup. Afterwards, `Start.cmd` opens the studio. This changes execution policy only for that process.
+If local script execution is restricted, run `powershell -NoProfile -ExecutionPolicy Bypass -File .\setup.ps1` for setup. This changes execution policy only for that setup process. Afterwards, double-click **Start.cmd**: startup uses the local Python environment directly and does not require PowerShell.
 
 Open **http://127.0.0.1:7870**, visit **Model library**, and install a model. Installation downloads its pinned weights and creates an isolated GPU environment (or a pinned native CUDA runtime for TRELLIS.2). Verification hashes every required file against the publisher's pinned manifest. A failed installation can be resumed from the same button. Internet access is needed for installation and verification; generation runs locally with offline model loading.
 
-`./start.ps1 -NoBrowser` skips opening a browser. `./start.ps1 -Port 7871` changes the application port. Internal GPU worker ports 7892–7894 must be free. Close the studio with Ctrl+C to release its GPU workers.
+The studio runs in the background; the launcher window closes after startup. Reopening **Start.cmd** opens the existing studio without starting a duplicate. **Restart.cmd** requests a graceful restart; **Stop.cmd** stops the studio and releases its GPU workers. Do not terminate processes manually.
+
+Backend source updates reload automatically after a three-second settling period, once generation, model operations and incognito sessions have ended. An open incognito session delays restart to protect its unsaved results. Normal saved projects and assets stay intact. Updates do not download themselves or install changed dependencies; rerun setup when dependencies change. Frontend builds are served immediately, but an already open page may need refreshing to load a new JavaScript bundle.
+
+On the first managed launch, an older idle studio can be replaced automatically. The launcher verifies its API data directory, process command and working directory, then asks that studio to release its owned workers before replacing its web process. An unrelated process or a different checkout is never stopped. If the port is occupied by an unrecognized application, startup explains the conflict.
+
+`Start.cmd --no-browser` skips opening a browser; `Start.cmd --port 7871` chooses another app port. Use the same port with Restart/Stop. The PowerShell entry point remains compatible (`./start.ps1 -NoBrowser` / `-Port 7871`) and now delegates to the same manager. Internal GPU worker ports 7892–7894 must be free. Startup diagnostics and launcher state are under `data/runtime/launcher/`. Automatic reload does not recover an unexpected server crash in a restart loop: inspect the logs and reopen Start.cmd after fixing the cause.
 
 ## Self-contained storage
 

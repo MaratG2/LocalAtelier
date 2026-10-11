@@ -113,6 +113,7 @@ class GenerationQueue:
         self.queue = queue.Queue()
         self.cancelled = set()
         self.lock = threading.Lock()
+        self.accepting = True
         threading.Thread(target=self._work, daemon=True).start()
 
     def submit(self, data, mesh=False, video=False):
@@ -125,6 +126,8 @@ class GenerationQueue:
         else:
             request = validate(data, self.store)
         with self.models.lock, self.lock:
+            if not self.accepting:
+                raise ValueError('Local Atelier is updating. Try again in a moment.')
             required = [] if request["mode"] == "simplify" else [request["model_id"]]
             if request.get("image_model_id"):
                 required.append(request["image_model_id"])

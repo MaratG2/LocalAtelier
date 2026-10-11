@@ -15,4 +15,4 @@ try {
     & npm run build
     if ($LASTEXITCODE) { throw 'Could not build the frontend.' }
 } finally { Pop-Location }
-Write-Host 'Local Atelier is ready. Run ./start.ps1, then install models in the model library.' -ForegroundColor Green
+Write-Host 'Local Atelier is ready. Open Start.cmd, then install models in the model library.' -ForegroundColor Green

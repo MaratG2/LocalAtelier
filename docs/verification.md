@@ -96,7 +96,16 @@ Regular Playwright Chromium exercised an isolated server at port 7871 with a cle
 
 The finish reviewer scored both findings resolved: internal temporary-image navigation and contrast of the new checkbox labels. All four supplied captures were valid. The correction retained the incumbent visual system and put the taller mobile composer in normal document flow.
 
-These checks verify application behavior and deterministic exports, **not newly generated GPU art quality**. No fresh native Qwen, HiDream, TRELLIS.2 or H3 inference was run for this change. The preceding GPU measurements belong to earlier versions. At completion of these checks, the production server on port 7870 still reported 0.3.0 and required a manual restart to load the new backend; automatic approval review had blocked stopping that process. The new frontend build and source were ready. Close the existing studio with Ctrl+C, then run `./start.ps1`; confirm `/api/status` reports 0.4.0 before using temporary mode.
+These checks verify application behavior and deterministic exports, **not newly generated GPU art quality**. No fresh native Qwen, HiDream, TRELLIS.2 or H3 inference was run for this change. The preceding GPU measurements belong to earlier versions. At completion of these checks, the production server on port 7870 still reported 0.3.0 and required a manual restart to load the new backend; automatic approval review had blocked stopping that process. The new frontend build and source were ready. That activation step was subsequently completed; the manual restart workflow has now been replaced by the managed launcher below.
+
+## Managed launcher — 2026-10-11
+
+- All 70 backend tests passed, including idle shutdown, admission locking, debounce, active generation/model operation deferral, incognito protection, single-instance locking and rejection of unrelated process identities.
+- Isolated real-server tests on temporary data and separate ports passed: start, duplicate Start reusing the same instance, graceful Restart, backend source change causing automatic reload, graceful Stop, and migration from an idle legacy server to a managed server.
+- The production studio was started through `Start.cmd --no-browser`. Its live status reported `launcher.managed: true` and the `image-pixelation` capability on port 7870. Two orphaned Qwen workers left by the old manually stopped server were individually verified and released; their worker ports were free afterwards.
+- TypeScript, the production frontend build and localization checks passed (795 Russian entries). The existing large 3D chunk warning remains.
+
+No GPU inference was run for launcher verification. Automatic reload waits for active work and open incognito sessions; it is not an automatic dependency installer, Git updater or crash recovery loop. Native worker cleanup during ordinary managed shutdown uses the existing Runtime release mechanism.
 
 ## Scope of these results
 

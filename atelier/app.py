@@ -47,6 +47,8 @@ def create_app(data_root=None, project_root=None, runtime_factory=Runtime):
 
     @app.before_request
     def origin_guard():
+        if app.config.get('STUDIO_STOPPING') and request.method not in {'GET', 'HEAD', 'OPTIONS'}:
+            return jsonify(error='Local Atelier is updating. Try again in a moment.'), 503
         key = request.cookies.get('atelier_temporary')
         session = store.sessions.get(key)
         g.session_context = store.context.set(key if session and not session.closed else None)
@@ -120,7 +122,8 @@ def create_app(data_root=None, project_root=None, runtime_factory=Runtime):
                 pass
             hardware.update(at=time.monotonic(), value=value)
         return jsonify(name="Local Atelier", version="0.4.0", temporary=store.temporary, cleanup_error=store.cleanup_error, hardware=hardware["value"], active_model=runtime.active_model,
-                       runtime_phase=runtime.phase, services=SERVICES, data_path=str(store.root), features=['image-pixelation'])
+                       runtime_phase=runtime.phase, services=SERVICES, data_path=str(store.root), features=['image-pixelation'],
+                       launcher=app.config.get('LAUNCHER', {'managed': False}))
 
     @app.route("/api/projects", methods=["GET", "POST"])
     def projects_route():

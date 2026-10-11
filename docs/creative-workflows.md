@@ -36,7 +36,7 @@ Style controls apply to Images. They do not silently alter TRELLIS or H3 prompts
 
 Enable **Pixel** beside **Transparent background** in Images to process the generated result on the CPU. It works with either image model, Create / Edit / References, batches and game tools. The switch is off by default. Enabling it opens Advanced; collapsing Advanced keeps the switch and settings active.
 
-If the running backend predates Pixel support, attempting to generate with Pixel shows a restart message without queueing a job. Restart Local Atelier to load the updated backend, then try again.
+Start the studio through **Start.cmd** to enable managed startup and automatic backend reload. The launcher replaces a verified idle older instance when needed, then applies future backend updates after active work and incognito sessions finish. The interface checks the backend's advertised `image-pixelation` capability before queueing; an older backend shows a restart message instead of receiving unsupported settings.
 
 Advanced → **Pixel finish** sets the output block size (2, 4, 8, 16 or 32 px) and maximum palette size (presets of 8, 16, 32, 64, 128 or 256 colors). Defaults are 8 px and 32 colors, giving a 128×128 logical grid for a 1024×1024 output. The API accepts any integer palette limit from 2 through 256; Reuse settings preserves custom limits and adds them to the selector. Each cell is area-averaged, colors are reduced without dithering, then enlarged with nearest-neighbor sampling. Output dimensions stay unchanged; any partial edge cells are cropped. Bigger blocks simplify more detail. This enforces a pixel grid and palette, but cannot fix incorrect shapes, missing details, poses or tile seams.
 

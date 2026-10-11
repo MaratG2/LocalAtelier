@@ -792,5 +792,6 @@
   "Pixel settings must contain only pixel size and colors": "Настройки пикселизации могут содержать только размер пикселя и число цветов",
   "Pixel size must be 2, 4, 8, 16 or 32": "Размер пикселя должен быть 2, 4, 8, 16 или 32",
   "Pixel colors must be a whole number between 2 and 256": "Число цветов должно быть целым от 2 до 256",
-  "Restart Local Atelier to use Pixel, then try again.": "Перезапустите Local Atelier, чтобы включить пикселизацию, и повторите попытку."
+  "Restart Local Atelier to use Pixel, then try again.": "Перезапустите Local Atelier, чтобы включить пикселизацию, и повторите попытку.",
+  "Local Atelier is updating. Try again in a moment.": "Local Atelier обновляется. Повторите попытку через несколько секунд."
 }
