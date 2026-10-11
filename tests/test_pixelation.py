@@ -3,7 +3,8 @@ import json
 import unittest
 from unittest.mock import patch
 
-from PIL import Image
+import numpy as np
+from PIL import Image, ImageDraw
 
 from atelier.pixelation import pixelate
 from test_studio import StudioTests as StudioFixture
@@ -18,7 +19,7 @@ class PixelationTests(unittest.TestCase):
         result, metadata = pixelate(source, {'block_size': 8, 'colors': 16})
         self.assertEqual(result.size, source.size)
         self.assertEqual((metadata['grid_width'], metadata['grid_height']), (9, 7))
-        self.assertEqual(metadata['algorithm'], 'edge-cluster-nearest-v2')
+        self.assertEqual(metadata['algorithm'], 'coverage-cluster-nearest-v3')
         self.assertLessEqual(len(result.getcolors()), 16)
         for y in range(0, 49, 8):
             for x in range(0, 67, 8):
@@ -53,6 +54,23 @@ class PixelationTests(unittest.TestCase):
         result, _ = pixelate(source, {'block_size': 8, 'colors': 8})
         self.assertEqual(result.getpixel((0, 0)), detail)
         self.assertEqual(result.getpixel((8, 0)), background)
+
+    def test_gradual_shading_preserves_midtones_instead_of_snapping_to_darker_half(self):
+        source = Image.new('RGB', (48, 8))
+        source.putdata([(100 + x * 2,) * 3 for y in range(8) for x in range(48)])
+        result, _ = pixelate(source, {'block_size': 8, 'colors': 256})
+        self.assertEqual([result.getpixel((x, 0))[0] for x in range(0, 48, 8)],
+                         [107, 123, 139, 155, 171, 187])
+
+    def test_broad_curved_shadows_follow_coverage_without_extra_teeth_or_notches(self):
+        for bounds in ((21, 25, 234, 102), (17, 31, 229, 94)):
+            with self.subTest(bounds=bounds):
+                source = Image.new('RGB', (256, 128), (192,) * 3)
+                ImageDraw.Draw(source).ellipse(bounds, fill=(55,) * 3)
+                coverage = (np.asarray(source)[..., 0] == 55).reshape(16, 8, 32, 8).mean(axis=(1, 3))
+                result, _ = pixelate(source, {'block_size': 8, 'colors': 8})
+                silhouette = np.asarray(result)[::8, ::8, 0] < 100
+                np.testing.assert_array_equal(silhouette, coverage >= 0.5)
 
     def test_isolated_specks_do_not_turn_into_large_outline_blocks(self):
         source = Image.new('RGB', (24, 24), (240, 240, 240))
@@ -127,7 +145,7 @@ class PixelationQueueTests(unittest.TestCase):
                         self.assertEqual('pixelation' in embedded, enabled)
                         if enabled:
                             self.assertEqual(embedded['settings']['pixelation'], values['pixelation'])
-                            self.assertEqual(embedded['pixelation']['algorithm'], 'edge-cluster-nearest-v2')
+                            self.assertEqual(embedded['pixelation']['algorithm'], 'coverage-cluster-nearest-v3')
                     sidecar = json.loads((self.store.assets / (asset_id + '.json')).read_text())
                     self.assertEqual(sidecar, embedded)
                     with Image.open(self.store.assets / asset['thumbnail']) as thumb:

@@ -22,8 +22,9 @@ def _edge_cells(padded, columns, rows, block):
     """Choose a color group per cell, keeping supported contrasting details.
 
     Two local clusters separate an outline/highlight from its background. A
-    smaller cluster can win when it contrasts with the surrounding cells and
-    has enough connected pixels. Isolated noise cannot claim a whole cell.
+    smaller cluster can win when it is a strong outlier in the surrounding cells
+    and has enough connected pixels. Broad boundaries follow cell coverage;
+    gentle shading keeps its average. Isolated noise cannot claim a whole cell.
     Process strips so large reference images do not create huge pixel tensors.
     """
     averaged = np.asarray(padded.resize((columns, rows), Image.Resampling.BOX)).astype(np.float32)
@@ -68,12 +69,15 @@ def _edge_cells(padded, columns, rows, block):
         distance_first = ((first - local) ** 2).sum(axis=1)
         distance_second = ((second - local) ** 2).sum(axis=1)
         contrast = ((first - second) ** 2).sum(axis=1) > 70 ** 2
-        keep_first = contrast & first_coherent & (mass >= total * 0.18) & (distance_first > distance_second * 2)
-        keep_second = contrast & second_coherent & (total - mass >= total * 0.18) & (distance_second > distance_first * 2)
+        # Reserve minority rescue for thin features. A loose context ratio also
+        # expands/retracts broad shadow boundaries, producing one-cell teeth.
+        keep_first = contrast & first_coherent & (mass >= total * 0.18) & (distance_first > distance_second * 8)
+        keep_second = contrast & second_coherent & (total - mass >= total * 0.18) & (distance_second > distance_first * 8)
         choice = np.where(keep_first, True, np.where(keep_second, False, mass >= total / 2))
         rgb = np.where(choice[:, None], first, second)
-        # A checkerboard or isolated specks have no coherent feature to preserve.
-        rgb = np.where((first_coherent | second_coherent)[:, None], rgb, mean)
+        # Low-contrast ramps have no edge to snap: picking one half of their
+        # colors biases the shading. Preserve their average, as with noise.
+        rgb = np.where(((first_coherent | second_coherent) & contrast)[:, None], rgb, mean)
         result[start:stop] = np.rint(rgb).clip(0, 255).astype(np.uint8).reshape(stop - start, columns, 3)
     return result, averaged[..., 3] >= 128 if padded.mode == 'RGBA' else None
 
@@ -130,4 +134,4 @@ def pixelate(image, settings):
         reduced.putalpha(Image.fromarray(opaque.astype(np.uint8) * 255))
     result = reduced.resize(padded.size, Image.Resampling.NEAREST).crop((0, 0, width, height))
     return result, {**settings, 'grid_width': columns, 'grid_height': rows,
-                    'algorithm': 'edge-cluster-nearest-v2', 'hard_alpha': has_alpha}
+                    'algorithm': 'coverage-cluster-nearest-v3', 'hard_alpha': has_alpha}
