@@ -29,7 +29,7 @@ import { Projects, ProjectForm } from "./Projects";
 import { ImageStudio } from "./ImageStudio";
 import { ModelLibrary } from "./ModelLibrary";
 import { Settings } from "./Settings";
-import type { Project, Snapshot, Model, Job, Status } from "./types";
+import type { Asset, Project, Snapshot, Model, Job, Status } from "./types";
 const MeshStudio = lazy(() => import("./MeshStudio"));
 const VideoStudio = lazy(() => import("./VideoStudio"));
 
@@ -52,6 +52,7 @@ export default function App() {
   const [mobileNav, setMobileNav] = useState(false);
   const [notice, setNotice] = useState("");
   const loadVersion = useRef(0);
+  const navigationVersion = useRef(0);
   const load = useCallback(async () => {
     const version = ++loadVersion.current;
     try {
@@ -86,6 +87,7 @@ export default function App() {
   }, [load]);
   useEffect(() => {
     const pop = () => {
+      ++navigationVersion.current;
       setRoute(location.pathname);
       setProjectId(
         new URLSearchParams(location.search).get("project") ||
@@ -102,6 +104,7 @@ export default function App() {
     return () => clearTimeout(timer);
   }, [notice]);
   const navigate = (path: string, project?: string) => {
+    ++navigationVersion.current;
     const destination = new URL(path, location.origin);
     if (project) destination.searchParams.set("project", project);
     const selectedProject = destination.searchParams.get("project");
@@ -114,9 +117,30 @@ export default function App() {
     }
     setMobileNav(false);
   };
+  const openProject = async (project: Project) => {
+    const version = ++navigationVersion.current;
+    try {
+      const latest = project.cover_id
+        ? await api<Asset>(`/assets/${encodeURIComponent(project.cover_id)}`)
+        : null;
+      // A later click or browser navigation takes precedence over this lookup.
+      if (version !== navigationVersion.current) return;
+      const path =
+        latest?.kind === "video"
+          ? "/video"
+          : latest?.kind === "mesh"
+            ? "/3d"
+            : "/images";
+      navigate(path, project.id);
+    } catch (error) {
+      if (version === navigationVersion.current)
+        setError((error as Error).message);
+    }
+  };
   const currentProject =
     snapshot.projects.find((p) => p.id === projectId)?.id || "inbox";
   const pickProject = (id: string) => {
+    ++navigationVersion.current;
     setProjectId(id);
     if (!snapshot.status?.temporary)
       localStorage.setItem("atelier.project", id);
@@ -209,7 +233,7 @@ export default function App() {
               .filter((p) => p.favorite)
               .slice(0, 4)
               .map((p) => (
-                <button key={p.id} onClick={() => navigate("/images", p.id)}>
+                <button key={p.id} onClick={() => void openProject(p)}>
                   <Star size={15} />
                   <span> {projectName(p)} </span>
                 </button>
@@ -271,12 +295,14 @@ export default function App() {
           <Home
             snapshot={snapshot}
             navigate={navigate}
+            onOpenProject={openProject}
             onNewProject={() => setNewProject(true)}
           />
         ) : route === "/projects" ? (
           <Projects
             snapshot={snapshot}
             navigate={navigate}
+            onOpenProject={openProject}
             refresh={load}
             notify={notify}
             onNew={() => setNewProject(true)}

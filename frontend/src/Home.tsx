@@ -9,14 +9,16 @@ import {
   Folder,
   ChevronRight,
 } from "lucide-react";
-import type { Snapshot } from "./types";
+import type { Project, Snapshot } from "./types";
 export function Home({
   snapshot,
   navigate,
+  onOpenProject,
   onNewProject,
 }: {
   snapshot: Snapshot;
   navigate: (path: string, project?: string) => void;
+  onOpenProject: (project: Project) => void;
   onNewProject: () => void;
 }) {
   return (
@@ -85,7 +87,7 @@ export function Home({
             <div>
               <div className="service-title">
                 <h3> {t(name)} </h3>
-                {name === t("3D studio") || name === t("Video") ? (
+                {name === "3D studio" || name === "Video" ? (
                   <button
                     className="text-link"
                     onClick={() =>
@@ -118,7 +120,7 @@ export function Home({
               <button
                 className="project-row"
                 key={p.id}
-                onClick={() => navigate("/images", p.id)}
+                onClick={() => onOpenProject(p)}
               >
                 {p.cover_id ? (
                   <img src={`/api/assets/${p.cover_id}/thumbnail`} alt="" />

@@ -284,12 +284,14 @@ export function ProjectForm({
 export function Projects({
   snapshot,
   navigate,
+  onOpenProject,
   refresh,
   notify,
   onNew,
 }: {
   snapshot: Snapshot;
   navigate: (path: string, project?: string) => void;
+  onOpenProject: (project: Project) => void;
   refresh: () => Promise<void>;
   notify: (s: string) => void;
   onNew: () => void;
@@ -373,7 +375,7 @@ export function Projects({
             <article key={p.id} className="project-card">
               <button
                 className="project-cover"
-                onClick={() => !archived && navigate("/images", p.id)}
+                onClick={() => !archived && onOpenProject(p)}
                 disabled={archived}
               >
                 {p.cover_id ? (
@@ -408,7 +410,9 @@ export function Projects({
                     />
                   </button>
                 </div>
-                <p>{p.description || t("A little space for your next idea.")}</p>
+                <p>
+                  {p.description || t("A little space for your next idea.")}
+                </p>
                 {!archived && (
                   <div className="project-service-links">
                     <button
@@ -474,7 +478,7 @@ export function Projects({
                       <button
                         className="icon-btn"
                         aria-label={t(`Open ${projectName(p)}`)}
-                        onClick={() => navigate("/images", p.id)}
+                        onClick={() => onOpenProject(p)}
                       >
                         <ArrowUpRight size={18} />
                       </button>
