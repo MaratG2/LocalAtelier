@@ -15,6 +15,7 @@ import {
   Link,
   List,
   LoaderCircle,
+  Palette,
   Pencil,
   Plus,
   RotateCcw,
@@ -25,7 +26,7 @@ import {
   Trash2,
   X,
 } from "lucide-react";
-import { GameControls, GameWorkbench } from "./GameTools";
+import { GameControls, GameToolSelect, GameWorkbench } from "./GameTools";
 import { ProjectForm } from "./Projects";
 import { api, date, patch, post } from "./api";
 import { Empty, Modal } from "./ui";
@@ -87,6 +88,11 @@ export function ImageStudio({
   const [gameAsset, setGameAsset] = useState<GameAsset | null>(null);
   const [workshop, setWorkshop] = useState<Asset | null>(null);
   const [editProject, setEditProject] = useState(false);
+  const [settingsPanel, setSettingsPanel] = useState<"style" | "game" | null>(
+    null,
+  );
+  const styleTrigger = useRef<HTMLButtonElement>(null);
+  const gameTrigger = useRef<HTMLButtonElement>(null);
   const styleReference = useStyleReference ? project?.style_reference_id : null;
   const [mode, setMode] = useState<GenerationRequest["mode"]>("t2i");
   const [ratio, setRatio] = useState<string>(draft.ratio || "1:1");
@@ -248,6 +254,8 @@ export function ImageStudio({
     setUseStyle(settings.use_style ?? false);
     setUseStyleReference(false);
     setGameAsset(settings.game_asset || null);
+    if (!settings.game_asset)
+      setSettingsPanel((panel) => (panel === "game" ? null : panel));
     setModelId(settings.model_id);
     setSteps(settings.num_inference_steps);
     setSeed(settings.seed);
@@ -511,59 +519,22 @@ export function ImageStudio({
       <form
         className="composer"
         onSubmit={generate}
+        onKeyDown={(event) => {
+          if (event.key === "Escape" && settingsPanel) {
+            event.preventDefault();
+            (settingsPanel === "style"
+              ? styleTrigger
+              : gameTrigger
+            ).current?.focus();
+            setSettingsPanel(null);
+          }
+        }}
         onDragOver={(e) => e.preventDefault()}
         onDrop={(e) => {
           e.preventDefault();
           if (!busy) void upload(Array.from(e.dataTransfer.files));
         }}
       >
-        <div className="creative-controls">
-          <GameControls value={gameAsset} onChange={setGameAsset} />
-          <div className="style-controls">
-            <label className="check-label">
-              <input
-                type="checkbox"
-                checked={useStyle}
-                onChange={(e) => setUseStyle(e.target.checked)}
-              />{" "}
-              {t("Project style")}{" "}
-            </label>
-            {project?.style_reference_id && (
-              <label className="check-label">
-                <input
-                  type="checkbox"
-                  checked={useStyleReference && mode !== "edit"}
-                  disabled={mode === "edit"}
-                  onChange={(e) => setUseStyleReference(e.target.checked)}
-                />{" "}
-                {t("Style reference")}{" "}
-              </label>
-            )}
-            {styleReference && mode !== "edit" && (
-              <img
-                src={`/api/assets/${styleReference}/thumbnail`}
-                alt={t("Project style reference")}
-              />
-            )}
-            <span>
-              {styleReference && mode !== "edit"
-                ? t("References mode will be used")
-                : useStyle
-                  ? project?.style_prompt ||
-                    t("Use project or global art direction")
-                  : t("Style prompt disabled for this image")}
-            </span>
-            <button
-              className="quiet"
-              type="button"
-              disabled={snapshot.status?.temporary}
-              onClick={() => setEditProject(true)}
-            >
-              {" "}
-              {t("Edit style")}{" "}
-            </button>
-          </div>
-        </div>
         <div className="composer-top">
           <div
             className="mode-tabs"
@@ -597,12 +568,132 @@ export function ImageStudio({
               </button>
             ))}
           </div>
-          {active.length ? (
-            <span className="queue-count">
-              {active.length} {t("in queue")}{" "}
-            </span>
-          ) : null}
+          <div className={`composer-options${gameAsset ? " has-game" : ""}`}>
+            <GameToolSelect
+              value={gameAsset}
+              onChange={(value) => {
+                setGameAsset(value);
+                setSettingsPanel(value ? "game" : null);
+              }}
+            />
+            {gameAsset && (
+              <button
+                ref={gameTrigger}
+                type="button"
+                className="composer-option"
+                aria-label={t("Game asset settings")}
+                aria-expanded={settingsPanel === "game"}
+                aria-controls="game-options"
+                onClick={() =>
+                  setSettingsPanel(settingsPanel === "game" ? null : "game")
+                }
+              >
+                <Grid2X2 size={15} /> {gameAsset.columns} × {gameAsset.rows}
+                <ChevronDown size={13} />
+              </button>
+            )}
+            <button
+              ref={styleTrigger}
+              type="button"
+              className="composer-option"
+              aria-label={t("Style settings")}
+              aria-expanded={settingsPanel === "style"}
+              aria-controls="style-options"
+              onClick={() =>
+                setSettingsPanel(settingsPanel === "style" ? null : "style")
+              }
+            >
+              {styleReference && mode !== "edit" ? (
+                <img src={`/api/assets/${styleReference}/thumbnail`} alt="" />
+              ) : (
+                <Palette size={15} />
+              )}
+              {t(
+                styleReference && mode !== "edit"
+                  ? "Style: Reference"
+                  : useStyle
+                    ? "Style: Auto"
+                    : "Style: Off",
+              )}
+              <ChevronDown size={13} />
+            </button>
+            {active.length ? (
+              <span className="queue-count">
+                {active.length} {t("in queue")}
+              </span>
+            ) : null}
+          </div>
         </div>
+        {settingsPanel && (
+          <div
+            className="composer-options-panel"
+            id={settingsPanel === "style" ? "style-options" : "game-options"}
+            role="region"
+            aria-label={t(
+              settingsPanel === "style"
+                ? "Style settings"
+                : "Game asset settings",
+            )}
+          >
+            {settingsPanel === "game" && gameAsset ? (
+              <GameControls value={gameAsset} onChange={setGameAsset} />
+            ) : settingsPanel === "style" ? (
+              <div className="style-controls">
+                <div className="style-toggles">
+                  <label className="check-label">
+                    <input
+                      type="checkbox"
+                      checked={useStyle}
+                      onChange={(e) => setUseStyle(e.target.checked)}
+                    />
+                    {t("Project style")}
+                  </label>
+                  {project?.style_reference_id && (
+                    <label className="check-label">
+                      <input
+                        type="checkbox"
+                        checked={useStyleReference && mode !== "edit"}
+                        disabled={mode === "edit"}
+                        onChange={(e) => setUseStyleReference(e.target.checked)}
+                      />
+                      {t("Style reference")}
+                    </label>
+                  )}
+                </div>
+                <p>
+                  {styleReference && mode !== "edit"
+                    ? t("References mode will be used")
+                    : useStyle
+                      ? project?.style_prompt ||
+                        t("Use project or global art direction")
+                      : t("Style prompt disabled for this image")}
+                </p>
+                <button
+                  className="quiet"
+                  type="button"
+                  disabled={snapshot.status?.temporary}
+                  onClick={() => setEditProject(true)}
+                >
+                  <Pencil size={14} /> {t("Edit style")}
+                </button>
+              </div>
+            ) : null}
+            <button
+              type="button"
+              className="icon-btn panel-close"
+              aria-label={t("Close settings")}
+              onClick={() => {
+                (settingsPanel === "style"
+                  ? styleTrigger
+                  : gameTrigger
+                ).current?.focus();
+                setSettingsPanel(null);
+              }}
+            >
+              <X size={16} />
+            </button>
+          </div>
+        )}
         {refs.length ? (
           <div className="reference-strip">
             {refs.map((ref, index) => (

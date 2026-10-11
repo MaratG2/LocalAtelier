@@ -13,7 +13,7 @@ export const defaultGameAsset: GameAsset = {
   pixel_art: true,
   palette: 32,
 };
-export function GameControls({
+export function GameToolSelect({
   value,
   onChange,
 }: {
@@ -21,83 +21,87 @@ export function GameControls({
   onChange: (v: GameAsset | null) => void;
 }) {
   return (
+    <label className="composer-tool-select">
+      <span className="sr-only">{t("Image tool")}</span>
+      <select
+        aria-label={t("Image tool")}
+        value={value?.kind || "image"}
+        onChange={(e) =>
+          onChange(
+            e.target.value === "image"
+              ? null
+              : {
+                  ...(value || defaultGameAsset),
+                  kind: e.target.value as GameAsset["kind"],
+                },
+          )
+        }
+      >
+        <option value="image"> {t("Default image")} </option>
+        <optgroup label={t("Game development")}>
+          <option value="tileset"> {t("Tileset & tile map")} </option>
+          <option value="spritesheet"> {t("Character sprite sheet")} </option>
+        </optgroup>
+      </select>
+    </label>
+  );
+}
+
+export function GameControls({
+  value,
+  onChange,
+}: {
+  value: GameAsset;
+  onChange: (value: GameAsset) => void;
+}) {
+  return (
     <div className="game-controls">
-      <label>
-        {" "}
-        {t("Image tool")}{" "}
-        <select
-          aria-label={t("Image tool")}
-          value={value?.kind || "image"}
-          onChange={(e) =>
-            onChange(
-              e.target.value === "image"
-                ? null
-                : {
-                    ...(value || defaultGameAsset),
-                    kind: e.target.value as GameAsset["kind"],
-                  },
-            )
-          }
-        >
-          <option value="image"> {t("Default image")} </option>
-          <optgroup label={t("Game development")}>
-            <option value="tileset"> {t("Tileset & tile map")} </option>
-            <option value="spritesheet"> {t("Character sprite sheet")} </option>
-          </optgroup>
-        </select>
-      </label>
-      {value && (
-        <>
-          {(["columns", "rows", "cell_size", "palette", "fps"] as const).map(
-            (name) => (
-              <label key={name}>
-                {" "}
-                {t(
-                  {
-                    columns: "Columns",
-                    rows: "Rows",
-                    cell_size: "Export cell (px)",
-                    palette: "Palette colors",
-                    fps: "Animation FPS",
-                  }[name],
-                )}{" "}
-                <input
-                  type="number"
-                  min={name === "cell_size" ? 16 : name === "palette" ? 2 : 1}
-                  max={
-                    name === "columns" || name === "rows"
-                      ? 8
-                      : name === "fps"
-                        ? 30
-                        : 256
-                  }
-                  value={value[name]}
-                  onChange={(e) =>
-                    onChange({ ...value, [name]: Number(e.target.value) })
-                  }
-                />
-              </label>
-            ),
-          )}
-          <label className="check-label">
-            <input
-              type="checkbox"
-              checked={value.pixel_art}
-              onChange={(e) =>
-                onChange({ ...value, pixel_art: e.target.checked })
-              }
-            />{" "}
-            {t("Pixel art")}{" "}
-          </label>
-          <p>
+      {(["columns", "rows", "cell_size", "palette", "fps"] as const).map(
+        (name) => (
+          <label key={name}>
             {" "}
             {t(
-              "Describe the character and animation, or the terrain and tile types. A grid prompt is added automatically. Export crops equal cells; check poses and seams before using them in a game.",
+              {
+                columns: "Columns",
+                rows: "Rows",
+                cell_size: "Export cell (px)",
+                palette: "Palette colors",
+                fps: "Animation FPS",
+              }[name],
             )}{" "}
-          </p>
-          <p>{t("Canvas follows the grid so exported cells stay square.")}</p>
-        </>
+            <input
+              type="number"
+              min={name === "cell_size" ? 16 : name === "palette" ? 2 : 1}
+              max={
+                name === "columns" || name === "rows"
+                  ? 8
+                  : name === "fps"
+                    ? 30
+                    : 256
+              }
+              value={value[name]}
+              onChange={(e) =>
+                onChange({ ...value, [name]: Number(e.target.value) })
+              }
+            />
+          </label>
+        ),
       )}
+      <label className="check-label">
+        <input
+          type="checkbox"
+          checked={value.pixel_art}
+          onChange={(e) => onChange({ ...value, pixel_art: e.target.checked })}
+        />{" "}
+        {t("Pixel art")}{" "}
+      </label>
+      <p>
+        {" "}
+        {t(
+          "Describe the character and animation, or the terrain and tile types. A grid prompt is added automatically. Export crops equal cells; check poses and seams before using them in a game.",
+        )}{" "}
+      </p>
+      <p>{t("Canvas follows the grid so exported cells stay square.")}</p>
     </div>
   );
 }

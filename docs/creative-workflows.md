@@ -28,13 +28,15 @@ New project / Edit project contains a style prompt and optional reference image.
 
 Upload a reference at creation, generate one with Qwen after creating the project, or choose **Use as project style reference** from image details. Generated references remain ordinary project images. Save project changes to make a generated reference the default.
 
-The image composer has independent **Project style** and **Style reference** switches. Style text is appended to the user's prompt when the job is queued. The reference is inserted into reference mode automatically, counts toward the model's reference limit, and is recorded in metadata. Choosing Create or Edit explicitly disables the automatic reference for that draft. Edit uses only its selected image. Removing the project reference does not delete its original image. Changes after submission do not alter queued jobs.
+Open **Style** beside the image tool selector to access independent **Project style** and **Style reference** switches and **Edit style**. The collapsed button shows automatic style, reference style, or style off. Style text is appended to the user's prompt when the job is queued. The reference is inserted into reference mode automatically, counts toward the model's reference limit, and is recorded in metadata. Choosing Create or Edit explicitly disables the automatic reference for that draft. Edit uses only its selected image. Removing the project reference does not delete its original image. Changes after submission do not alter queued jobs.
 
 Style controls apply to Images. They do not silently alter TRELLIS or H3 prompts. Reuse settings preserves the original user prompt without appending style or grid instructions a second time. Style consistency is guidance, not an identity lock or a guarantee of identical poses and colors.
 
 ## Game development tools
 
 Images → **Image tool** offers Default image, Character sprite sheet, and Tileset & tile map. Select a 1–8 column/row grid, 16–256 px export cell, frame rate, pixel-art mode and palette size. Grid aspect ratios are limited to 4:1 so the model's supported 512–2048 canvas can use square source cells. The requested resolution is adjusted to a compatible grid and multiples of 64. Square source cells avoid stretching during export.
+
+The tool selector sits beside Create / Edit / References. Choosing a game tool opens its settings; the compact grid button reopens them later. Close the panel with its close button or Escape to return to the compact composer; keyboard focus returns to the settings button. Collapsing settings preserves their values, and choosing Default image removes the game grid instructions.
 
 The generation request adds grid, camera, lighting and consistency guidance. Describe the actual character, action, terrain or transitions in the prompt. Project art direction and reference overrides continue to apply. Qwen's existing transparent-background switch can request native alpha; exports preserve the source alpha rather than guessing a background color.
 

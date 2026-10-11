@@ -1145,6 +1145,8 @@ input[type="checkbox"] {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 10px 20px;
 }
 .mode-tabs {
   display: flex;
@@ -2325,10 +2327,58 @@ input[type="checkbox"] {
   flex: 1;
   min-height: 0;
 }
-.creative-controls {
+.composer-options {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.composer-tool-select {
+  display: flex;
+  min-width: 0;
+}
+.composer-tool-select select,
+.composer-option {
+  min-height: 34px;
+  padding: 6px 9px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: white;
+  color: var(--ink);
+  font-size: 11px;
+}
+.composer-tool-select select {
+  max-width: 210px;
+  text-overflow: ellipsis;
+}
+.composer-option {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+}
+.composer-option:hover,
+.composer-option[aria-expanded="true"] {
+  background: var(--soft);
+  border-color: #b9cabb;
+}
+.composer-option img {
+  width: 18px;
+  height: 18px;
+  border-radius: 3px;
+  object-fit: cover;
+}
+.composer-options-panel {
+  position: relative;
+  margin-top: 12px;
+  padding: 14px 40px 14px 0;
+  border-top: 1px solid var(--line);
   border-bottom: 1px solid var(--line);
-  padding-bottom: 10px;
-  margin-bottom: 10px;
+}
+.composer-options-panel .panel-close {
+  position: absolute;
+  right: 0;
+  top: 9px;
 }
 .game-controls {
   display: flex;
@@ -2367,24 +2417,50 @@ input[type="checkbox"] {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
-  gap: 10px 15px;
-  margin-top: 10px;
+  gap: 10px 20px;
   font-size: 11px;
 }
-.style-controls > span {
+.style-toggles {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+.style-controls > p {
   flex: 1;
   min-width: 140px;
   max-width: 60ch;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  margin: 0;
+  overflow-wrap: anywhere;
+  line-height: 1.5;
   color: #526456;
 }
-.style-controls img {
-  width: 30px;
-  height: 30px;
-  object-fit: cover;
-  border-radius: 4px;
+.style-controls .quiet {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+}
+@media (max-width: 700px) {
+  .composer-options {
+    width: 100%;
+  }
+  .composer-tool-select {
+    flex: 1;
+  }
+  .composer-options.has-game .composer-tool-select {
+    flex-basis: 100%;
+  }
+  .composer-tool-select select {
+    width: 100%;
+    max-width: none;
+    min-width: 0;
+  }
+  .composer-options-panel .style-controls {
+    align-items: flex-start;
+  }
+  .style-controls > p {
+    flex-basis: 100%;
+  }
 }
 .project-style-fields {
   border: 1px solid var(--line);

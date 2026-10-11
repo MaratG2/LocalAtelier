@@ -774,5 +774,11 @@
   " · {0} GB": " · {0} ГБ",
   "GPU workers use temporary files on disk. Cleanup runs after active workers stop, when you end the session, close or reload the tab, or after 15 minutes disconnected. After a crash, cleanup retries on the next studio start. This is not secure disk erasure.": "Процессы видеокарты используют временные файлы на диске. Очистка выполняется после остановки процессов — при завершении сессии, закрытии или перезагрузке вкладки либо через 15 минут без подключения. После сбоя очистка повторяется при следующем запуске студии. Это не гарантирует безвозвратное стирание с диска.",
   "Grid aspect ratio cannot exceed 4:1. Add more rows or columns.": "Пропорции сетки не должны превышать 4:1. Добавьте строки или столбцы.",
-  "Canvas follows the grid so exported cells stay square.": "Пропорции холста следуют сетке, чтобы ячейки оставались квадратными."
+  "Canvas follows the grid so exported cells stay square.": "Пропорции холста следуют сетке, чтобы ячейки оставались квадратными.",
+  "Style settings": "Настройки стиля",
+  "Game asset settings": "Настройки игрового материала",
+  "Style: Reference": "Стиль: референс",
+  "Style: Auto": "Стиль: авто",
+  "Style: Off": "Стиль: выкл.",
+  "Close settings": "Закрыть настройки"
 }
