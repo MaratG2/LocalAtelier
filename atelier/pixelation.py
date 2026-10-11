@@ -1,5 +1,6 @@
 """Deterministic image finishing, independent of the GPU model."""
 
+import numpy as np
 from PIL import Image
 
 
@@ -17,11 +18,96 @@ def validate_pixelation(value):
     return {'block_size': block, 'colors': colors}
 
 
+def _edge_cells(padded, columns, rows, block):
+    """Choose a color group per cell, keeping supported contrasting details.
+
+    Two local clusters separate an outline/highlight from its background. A
+    smaller cluster can win when it contrasts with the surrounding cells and
+    has enough connected pixels. Isolated noise cannot claim a whole cell.
+    Process strips so large reference images do not create huge pixel tensors.
+    """
+    averaged = np.asarray(padded.resize((columns, rows), Image.Resampling.BOX)).astype(np.float32)
+    coverage = averaged[..., 3:4] / 255 if padded.mode == 'RGBA' else np.ones((rows, columns, 1), np.float32)
+    weighted = np.pad(averaged[..., :3] * coverage, ((1, 1), (1, 1), (0, 0)), mode='edge')
+    coverage = np.pad(coverage, ((1, 1), (1, 1), (0, 0)), mode='edge')
+    context = sum(weighted[y:y + rows, x:x + columns] for y in range(3) for x in range(3))
+    context /= np.maximum(sum(coverage[y:y + rows, x:x + columns] for y in range(3) for x in range(3)), 1e-6)
+
+    source = np.asarray(padded)
+    result = np.empty((rows, columns, 3), dtype=np.uint8)
+    strip_rows = max(1, 262144 // (columns * block * block))
+    for start in range(0, rows, strip_rows):
+        stop = min(start + strip_rows, rows)
+        cells = source[start * block:stop * block].reshape(stop - start, block, columns, block, -1)
+        cells = cells.transpose(0, 2, 1, 3, 4).reshape(-1, block * block, source.shape[2]).astype(np.float32)
+        pixels = cells[..., :3]
+        weights = cells[..., 3] / 255 if padded.mode == 'RGBA' else np.ones(cells.shape[:2], np.float32)
+        total = weights.sum(axis=1)
+        mean = (pixels * weights[..., None]).sum(axis=1) / np.maximum(total[:, None], 1e-6)
+        indices = np.arange(len(cells))
+        # Deterministic seeds; invisible colors never participate in clustering.
+        first = pixels[indices, (((pixels - mean[:, None]) ** 2).sum(axis=2) * weights).argmax(axis=1)]
+        second = pixels[indices, (((pixels - first[:, None]) ** 2).sum(axis=2) * weights).argmax(axis=1)]
+        for _ in range(5):
+            mask = ((pixels - first[:, None]) ** 2).sum(axis=2) <= ((pixels - second[:, None]) ** 2).sum(axis=2)
+            mass = (weights * mask).sum(axis=1)
+            first = (pixels * (weights * mask)[..., None]).sum(axis=1) / np.maximum(mass[:, None], 1e-6)
+            second = (pixels * (weights * ~mask)[..., None]).sum(axis=1) / np.maximum((total - mass)[:, None], 1e-6)
+            first = np.where((mass > 0)[:, None], first, mean)
+            second = np.where((total > mass)[:, None], second, mean)
+
+        def coherent(group):
+            grid = (group & (weights >= 0.5)).reshape(-1, block, block)
+            pairs = (grid[:, :, 1:] & grid[:, :, :-1]).sum(axis=(1, 2))
+            pairs += (grid[:, 1:, :] & grid[:, :-1, :]).sum(axis=(1, 2))
+            count = grid.sum(axis=(1, 2))
+            return (count > 0) & (pairs >= count * 0.5)
+
+        first_coherent, second_coherent = coherent(mask), coherent(~mask)
+        local = context[start:stop].reshape(-1, 3)
+        distance_first = ((first - local) ** 2).sum(axis=1)
+        distance_second = ((second - local) ** 2).sum(axis=1)
+        contrast = ((first - second) ** 2).sum(axis=1) > 70 ** 2
+        keep_first = contrast & first_coherent & (mass >= total * 0.18) & (distance_first > distance_second * 2)
+        keep_second = contrast & second_coherent & (total - mass >= total * 0.18) & (distance_second > distance_first * 2)
+        choice = np.where(keep_first, True, np.where(keep_second, False, mass >= total / 2))
+        rgb = np.where(choice[:, None], first, second)
+        # A checkerboard or isolated specks have no coherent feature to preserve.
+        rgb = np.where((first_coherent | second_coherent)[:, None], rgb, mean)
+        result[start:stop] = np.rint(rgb).clip(0, 255).astype(np.uint8).reshape(stop - start, columns, 3)
+    return result, averaged[..., 3] >= 128 if padded.mode == 'RGBA' else None
+
+
+def _limit_palette(rgb, opaque, colors):
+    """Build the palette, then match exact colors instead of octree bin labels.
+
+    Exact matching avoids bright specks where nearly identical background
+    colors straddle an octree boundary. Transparent cells do not bias training.
+    """
+    flat = rgb.reshape(-1, 3)
+    visible = np.ones(len(flat), dtype=bool) if opaque is None else opaque.ravel()
+    result = np.zeros_like(flat)
+    if visible.any():
+        samples = flat[visible]
+        budget = colors - int(not visible.all())  # Reserve one transparent color.
+        quantized = Image.fromarray(samples.reshape(-1, 1, 3)).quantize(
+            colors=budget, method=Image.Quantize.FASTOCTREE, dither=Image.Dither.NONE)
+        palette = np.asarray(quantized.getpalette(), dtype=np.int32).reshape(-1, 3)
+        palette = palette[[index for _, index in quantized.getcolors()]]
+        reduced = np.empty_like(samples)
+        for start in range(0, len(samples), 2048):
+            chunk = samples[start:start + 2048].astype(np.int32)
+            nearest = ((chunk[:, None] - palette) ** 2).sum(axis=2).argmin(axis=1)
+            reduced[start:start + len(chunk)] = palette[nearest]
+        result[visible] = reduced
+    return Image.fromarray(result.reshape(rgb.shape))
+
+
 def pixelate(image, settings):
-    """Average aligned square cells, limit colors, then enlarge without smoothing.
+    """Preserve contrasting features on a square grid without smoothing edges.
 
     Edge padding keeps cells square even for an odd-sized reference output.
-    Alpha is averaged with premultiplied color, then snapped to a hard silhouette.
+    Color clusters are alpha-weighted; alpha coverage becomes a hard silhouette.
     The returned image keeps the source dimensions; the source is never mutated.
     """
     settings = validate_pixelation(settings)
@@ -38,17 +124,10 @@ def pixelate(image, settings):
     if padded.height > height:
         edge = padded.crop((0, height - 1, padded.width, height))
         padded.paste(edge.resize((padded.width, padded.height - height), Image.Resampling.NEAREST), (0, height))
-    small = padded.resize((columns, rows), Image.Resampling.BOX)
-    rgb = small.convert('RGB')
-    alpha = None
-    if has_alpha:
-        alpha = small.getchannel('A').point(lambda value: 255 if value >= 128 else 0)
-        # Collapse hidden colors so they cannot fill the palette or bleed into edges.
-        rgb.paste((0, 0, 0), mask=alpha.point(lambda value: 255 - value))
-    reduced = rgb.quantize(colors=colors, method=Image.Quantize.FASTOCTREE,
-                           dither=Image.Dither.NONE).convert('RGB')
-    if alpha is not None:
-        reduced.putalpha(alpha)
+    rgb, opaque = _edge_cells(padded, columns, rows, block)
+    reduced = _limit_palette(rgb, opaque, colors)
+    if opaque is not None:
+        reduced.putalpha(Image.fromarray(opaque.astype(np.uint8) * 255))
     result = reduced.resize(padded.size, Image.Resampling.NEAREST).crop((0, 0, width, height))
     return result, {**settings, 'grid_width': columns, 'grid_height': rows,
-                    'algorithm': 'area-octree-nearest-v1', 'hard_alpha': has_alpha}
+                    'algorithm': 'edge-cluster-nearest-v2', 'hard_alpha': has_alpha}

@@ -18,6 +18,7 @@ class PixelationTests(unittest.TestCase):
         result, metadata = pixelate(source, {'block_size': 8, 'colors': 16})
         self.assertEqual(result.size, source.size)
         self.assertEqual((metadata['grid_width'], metadata['grid_height']), (9, 7))
+        self.assertEqual(metadata['algorithm'], 'edge-cluster-nearest-v2')
         self.assertLessEqual(len(result.getcolors()), 16)
         for y in range(0, 49, 8):
             for x in range(0, 67, 8):
@@ -27,12 +28,49 @@ class PixelationTests(unittest.TestCase):
         self.assertEqual(result.tobytes(), again.tobytes())
         self.assertEqual(source.tobytes(), original)
 
-    def test_area_average_reduces_noise_instead_of_picking_one_sample(self):
+    def test_incoherent_noise_is_averaged_instead_of_becoming_false_edges(self):
         source = Image.new('RGB', (8, 8))
         source.putdata([(255, 255, 255) if (x + y) % 2 else (0, 0, 0)
                         for y in range(8) for x in range(8)])
         result, _ = pixelate(source, {'block_size': 4, 'colors': 8})
         self.assertEqual(result.getcolors(), [(64, (128, 128, 128))])
+
+    def test_thin_dark_outlines_and_bright_highlights_keep_their_contrast(self):
+        for detail, background in (((15, 15, 15), (240, 240, 240)),
+                                   ((240, 240, 240), (15, 15, 15))):
+            with self.subTest(detail=detail):
+                source = Image.new('RGB', (24, 24), background)
+                # The line covers only a quarter of each cell, away from its center.
+                source.paste(detail, (2, 0, 4, 24))
+                result, _ = pixelate(source, {'block_size': 8, 'colors': 8})
+                self.assertEqual(result.crop((0, 0, 8, 24)).getcolors(), [(192, detail)])
+                self.assertEqual(result.crop((8, 0, 24, 24)).getcolors(), [(384, background)])
+
+    def test_small_color_accents_survive_even_with_similar_brightness(self):
+        detail, background = (210, 60, 40), (40, 110, 60)
+        source = Image.new('RGB', (24, 24), background)
+        source.paste(detail, (2, 0, 4, 24))
+        result, _ = pixelate(source, {'block_size': 8, 'colors': 8})
+        self.assertEqual(result.getpixel((0, 0)), detail)
+        self.assertEqual(result.getpixel((8, 0)), background)
+
+    def test_isolated_specks_do_not_turn_into_large_outline_blocks(self):
+        source = Image.new('RGB', (24, 24), (240, 240, 240))
+        source.putpixel((3, 3), (0, 0, 0))
+        result, _ = pixelate(source, {'block_size': 8, 'colors': 8})
+        self.assertEqual(result.getcolors(), [(576, (240, 240, 240))])
+
+    def test_nearby_background_colors_do_not_pick_a_distant_palette_color(self):
+        source = Image.new('RGB', (64, 8))
+        colors = [(191, 191, 191), (192, 192, 192), (193, 193, 193),
+                  (245, 245, 245), (15, 15, 15), (220, 160, 30), (90, 110, 25), (100, 70, 55)]
+        for index, color in enumerate(colors):
+            source.paste(color, (index * 8, 0, index * 8 + 8, 8))
+        result, _ = pixelate(source, {'block_size': 8, 'colors': 4})
+        palette = [color for _, color in result.getcolors()]
+        for index, color in enumerate(colors):
+            distance = lambda candidate: sum((a - b) ** 2 for a, b in zip(candidate, color))
+            self.assertEqual(distance(result.getpixel((index * 8, 0))), min(map(distance, palette)))
 
     def test_alpha_is_hard_without_hidden_color_halos(self):
         source = Image.new('RGBA', (24, 8), (0, 0, 255, 0))
@@ -89,6 +127,7 @@ class PixelationQueueTests(unittest.TestCase):
                         self.assertEqual('pixelation' in embedded, enabled)
                         if enabled:
                             self.assertEqual(embedded['settings']['pixelation'], values['pixelation'])
+                            self.assertEqual(embedded['pixelation']['algorithm'], 'edge-cluster-nearest-v2')
                     sidecar = json.loads((self.store.assets / (asset_id + '.json')).read_text())
                     self.assertEqual(sidecar, embedded)
                     with Image.open(self.store.assets / asset['thumbnail']) as thumb:
