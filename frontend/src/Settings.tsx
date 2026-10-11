@@ -1,3 +1,4 @@
+import { t, number } from "./i18n";
 import { useEffect, useState } from "react";
 import { Monitor, HardDrive, Power, FileText, ShieldCheck } from "lucide-react";
 import { api, bytes, patch, post } from "./api";
@@ -14,6 +15,7 @@ export function Settings({
   const [settings, setSettings] = useState({
     low_vram: false,
     unload_after_job: false,
+    style_prompt: "",
   });
   const [logs, setLogs] = useState<Record<string, string> | null>(null);
   const [error, setError] = useState("");
@@ -54,42 +56,74 @@ export function Settings({
     <div className="page settings-page">
       <header className="page-head">
         <div>
-          <h1>Settings</h1>
-          <p>A studio that fits your machine.</p>
+          <h1> {t("Settings")} </h1>
+          <p> {t("A studio that fits your machine.")} </p>
         </div>
       </header>
       {error ? (
         <div className="error-banner" role="alert">
-          {error}
+          {" "}
+          {t(error)}{" "}
         </div>
       ) : null}
       <section className="surface settings-section">
+        <h2> {t("Global image style")} </h2>
+        <p>
+          {" "}
+          {t(
+            "Used by projects that have no style prompt and allow global style inheritance.",
+          )}{" "}
+        </p>
+        <label>
+          {" "}
+          {t("Style prompt")}{" "}
+          <textarea
+            rows={4}
+            maxLength={4000}
+            value={settings.style_prompt}
+            onChange={(e) =>
+              setSettings({ ...settings, style_prompt: e.target.value })
+            }
+          />
+        </label>
+        <button
+          className="secondary"
+          disabled={busy || snapshot.status?.temporary}
+          onClick={() => void save({ style_prompt: settings.style_prompt })}
+        >
+          {" "}
+          {t("Save global style")}{" "}
+        </button>
+      </section>
+      <section className="surface settings-section">
         <h2>
-          <Monitor size={21} />
-          Hardware & runtime
+          <Monitor size={21} /> {t("Hardware & runtime")}{" "}
         </h2>
         <dl className="detail-list">
           <div>
-            <dt>GPU</dt>
-            <dd>{hw?.gpu_name || "No NVIDIA GPU detected"}</dd>
+            <dt> {t("GPU")} </dt>
+            <dd> {t(hw?.gpu_name || "No NVIDIA GPU detected")} </dd>
           </div>
           <div>
-            <dt>GPU memory</dt>
+            <dt> {t("GPU memory")} </dt>
             <dd>
-              {hw
-                ? `${(hw.gpu_used_mib / 1024).toFixed(1)} / ${(hw.gpu_total_mib / 1024).toFixed(1)} GB`
-                : "—"}
+              {" "}
+              {t(
+                hw
+                  ? `${number(hw.gpu_used_mib / 1024)} / ${number(hw.gpu_total_mib / 1024)} ${t("GB")}`
+                  : "—",
+              )}{" "}
             </dd>
           </div>
           <div>
-            <dt>Worker</dt>
+            <dt> {t("Worker")} </dt>
             <dd>
               {snapshot.status?.active_model
                 ? snapshot.models.find(
                     (m) => m.id === snapshot.status?.active_model,
                   )?.name
-                : "No model loaded"}{" "}
-              · {snapshot.status?.runtime_phase || "Idle"}
+                : t("No model loaded")}{" "}
+              · {t(snapshot.status?.runtime_phase || "Idle")}{" "}
             </dd>
           </div>
         </dl>
@@ -98,21 +132,25 @@ export function Settings({
           onClick={() => void release()}
           disabled={busy || active || !snapshot.status?.active_model}
         >
-          <Power size={16} />
-          Release GPU memory
+          <Power size={16} /> {t("Release GPU memory")}{" "}
         </button>
         <p className="muted-text">
-          Models switch automatically. The previous worker stops before the next
-          one loads.
+          {" "}
+          {t(
+            "Models switch automatically. The previous worker stops before the next one loads.",
+          )}{" "}
         </p>
       </section>
       <section className="surface settings-section">
-        <h2>Memory preferences</h2>
+        <h2> {t("Memory preferences")} </h2>
         <label className="setting-toggle">
           <span>
-            <strong>Low-VRAM mode for Qwen</strong>
+            <strong> {t("Low-VRAM mode for Qwen")} </strong>
             <small>
-              Offload more work to system RAM. Generation may take longer.
+              {" "}
+              {t(
+                "Offload more work to system RAM. Generation may take longer.",
+              )}{" "}
             </small>
           </span>
           <input
@@ -124,10 +162,12 @@ export function Settings({
         </label>
         <label className="setting-toggle">
           <span>
-            <strong>Unload after each job</strong>
+            <strong> {t("Unload after each job")} </strong>
             <small>
-              Free GPU memory after a batch completes. The next job reloads its
-              model.
+              {" "}
+              {t(
+                "Free GPU memory after a batch completes. The next job reloads its model.",
+              )}{" "}
             </small>
           </span>
           <input
@@ -140,43 +180,41 @@ export function Settings({
       </section>
       <section className="surface settings-section">
         <h2>
-          <HardDrive size={20} />
-          Storage
+          <HardDrive size={20} /> {t("Storage")}{" "}
         </h2>
         <dl className="detail-list">
           <div>
-            <dt>Projects and images</dt>
+            <dt> {t("Projects and images")} </dt>
             <dd>
-              <code>{snapshot.status?.data_path}</code>
+              <code> {t(snapshot.status?.data_path)} </code>
             </dd>
           </div>
           <div>
-            <dt>Available disk space</dt>
-            <dd>{bytes(hw?.disk_free_bytes || 0)}</dd>
+            <dt> {t("Available disk space")} </dt>
+            <dd> {t(bytes(hw?.disk_free_bytes || 0))} </dd>
           </div>
         </dl>
         <p className="muted-text">
-          Back up the data folder to preserve projects, prompts, reference
-          images and generated files. Archived projects and trashed images
-          remain recoverable.
+          {" "}
+          {t(
+            "Back up the data folder to preserve projects, prompts, reference images and generated files. Archived projects and trashed images remain recoverable.",
+          )}{" "}
         </p>
       </section>
       <section className="surface settings-section">
         <h2>
-          <ShieldCheck size={20} />
-          Local by design
+          <ShieldCheck size={20} /> {t("Local by design")}{" "}
         </h2>
         <p>
-          Generation runs on your GPU. No account, usage credits or hosted
-          inference service is required. Installation and verification contact
-          GitHub and Hugging Face to fetch runtimes, weights and checksums.
-          Model licenses are listed in the library.
+          {" "}
+          {t(
+            "Generation runs on your GPU. No account, usage credits or hosted inference service is required. Installation and verification contact GitHub and Hugging Face to fetch runtimes, weights and checksums. Model licenses are listed in the library.",
+          )}{" "}
         </p>
       </section>
       <section className="surface settings-section">
         <h2>
-          <FileText size={20} />
-          Diagnostics
+          <FileText size={20} /> {t("Diagnostics")}{" "}
         </h2>
         <button
           className="secondary"
@@ -186,18 +224,22 @@ export function Settings({
               .catch((e) => setError(e.message));
           }}
         >
-          Read runtime logs
+          {" "}
+          {t("Read runtime logs")}{" "}
         </button>
         {logs ? (
           Object.entries(logs).length ? (
             Object.entries(logs).map(([name, content]) => (
               <details key={name}>
-                <summary>{name}</summary>
-                <pre className="runtime-log">{content || "No output yet."}</pre>
+                <summary> {t(name)} </summary>
+                <pre className="runtime-log">
+                  {" "}
+                  {t(content || "No output yet.")}{" "}
+                </pre>
               </details>
             ))
           ) : (
-            <p className="muted-text">No workers have started yet.</p>
+            <p className="muted-text"> {t("No workers have started yet.")} </p>
           )
         ) : null}
       </section>

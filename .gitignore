@@ -3,6 +3,7 @@
 /models/
 .runtime/
 .design/
+.impeccable/review/
 .env
 __pycache__/
 *.py[cod]

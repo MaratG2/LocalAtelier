@@ -1,4 +1,7 @@
 export interface Project {
+  style_prompt: string;
+  style_reference_id: string | null;
+  inherit_style: number;
   id: string;
   name: string;
   description: string;
@@ -44,6 +47,10 @@ export interface Model {
   operation: Operation | null;
 }
 export interface GenerationRequest {
+  use_style?: boolean;
+  use_style_reference?: boolean;
+  user_prompt?: string;
+  game_asset?: GameAsset;
   project_id: string;
   model_id: string;
   mode: "t2i" | "edit" | "reference";
@@ -58,6 +65,7 @@ export interface GenerationRequest {
   transparent_background: boolean;
 }
 export interface Asset {
+  temporary?: boolean;
   kind: "generated" | "reference" | "mesh" | "video" | "media-reference";
   id: string;
   project_id: string;
@@ -137,6 +145,8 @@ export interface MeshTexture {
   height: number;
 }
 export interface Status {
+  temporary: boolean;
+  cleanup_error?: string;
   name: string;
   version: string;
   active_model: string | null;
@@ -148,6 +158,15 @@ export interface Status {
     gpu_used_mib: number;
     disk_free_bytes: number;
   };
+}
+export interface GameAsset {
+  kind: "tileset" | "spritesheet";
+  columns: number;
+  rows: number;
+  cell_size: number;
+  fps: number;
+  pixel_art: boolean;
+  palette: number;
 }
 export interface Snapshot {
   projects: Project[];

@@ -1,3 +1,4 @@
+import { t, projectName } from "./i18n";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   ArrowRight,
@@ -60,6 +61,7 @@ export default function MeshStudio({
 }) {
   const [form, setForm] = useState(() => {
     try {
+      if (snapshot.status?.temporary) return defaults;
       return {
         ...defaults,
         ...JSON.parse(localStorage.getItem(FORM_KEY) || "{}"),
@@ -116,6 +118,7 @@ export default function MeshStudio({
     return () => clearTimeout(timer);
   }, [loadAssets, snapshot.jobs]);
   useEffect(() => {
+    if (snapshot.status?.temporary) return;
     localStorage.setItem(FORM_KEY, JSON.stringify(form));
   }, [form]);
   useEffect(() => {
@@ -264,25 +267,27 @@ export default function MeshStudio({
     <div className="page mesh-page">
       <header className="page-head">
         <div>
-          <h1>3D studio</h1>
-          <p>Shape an idea into something you can turn around.</p>
+          <h1> {t("3D studio")} </h1>
+          <p> {t("Shape an idea into something you can turn around.")} </p>
         </div>
         <select
-          aria-label="3D project"
+          aria-label={t("3D project")}
           value={projectId}
           onChange={(e) => onProject(e.target.value)}
         >
           {snapshot.projects.map((p) => (
             <option key={p.id} value={p.id}>
-              {p.name}
+              {" "}
+              {projectName(p)}{" "}
             </option>
           ))}
         </select>
       </header>
       {error && (
         <div className="error-banner" role="alert">
-          {error}
-          <button aria-label="Dismiss error" onClick={() => setError("")}>
+          {" "}
+          {t(error)}{" "}
+          <button aria-label={t("Dismiss error")} onClick={() => setError("")}>
             <X size={17} />
           </button>
         </div>
@@ -303,13 +308,14 @@ export default function MeshStudio({
                 className={mode === value ? "active" : ""}
                 onClick={() => setMode(value)}
               >
-                {value === "image-to-3d" ? "Image to 3D" : "Text to 3D"}
+                {" "}
+                {t(value === "image-to-3d" ? "Image to 3D" : "Text to 3D")}{" "}
               </button>
             ))}
           </div>
           {mode === "image-to-3d" ? (
             <div className="mesh-reference-section">
-              <label>Reference image</label>
+              <label> {t("Reference image")} </label>
               <div
                 className="mesh-reference"
                 onDragOver={(e) => e.preventDefault()}
@@ -322,14 +328,14 @@ export default function MeshStudio({
                   type="button"
                   className="mesh-reference-preview"
                   onClick={() => imageInput.current?.click()}
-                  aria-label="Upload reference image"
+                  aria-label={t("Upload reference image")}
                 >
                   {reference ? (
                     <img src={reference.thumbnail_url} alt={reference.name} />
                   ) : (
                     <>
                       <ImagePlus size={28} strokeWidth={1.3} />
-                      <span>Drop an image</span>
+                      <span> {t("Drop an image")} </span>
                     </>
                   )}
                 </button>
@@ -340,16 +346,14 @@ export default function MeshStudio({
                     onClick={() => imageInput.current?.click()}
                     disabled={busy}
                   >
-                    <Upload size={15} />
-                    Choose image
+                    <Upload size={15} /> {t("Choose image")}{" "}
                   </button>
                   <button
                     type="button"
                     className="secondary"
                     onClick={() => void chooseImage()}
                   >
-                    <Folder size={15} />
-                    From project
+                    <Folder size={15} /> {t("From project")}{" "}
                   </button>
                   {reference && (
                     <button
@@ -357,16 +361,20 @@ export default function MeshStudio({
                       className="text-link"
                       onClick={() => setReference(null)}
                     >
-                      Remove image
+                      {" "}
+                      {t("Remove image")}{" "}
                     </button>
                   )}
                 </div>
               </div>
-              <small>One clear view of a single object works best.</small>
+              <small>
+                {" "}
+                {t("One clear view of a single object works best.")}{" "}
+              </small>
             </div>
           ) : (
             <div className="mesh-prompt">
-              <label htmlFor="mesh-prompt">Describe your object</label>
+              <label htmlFor="mesh-prompt"> {t("Describe your object")} </label>
               <textarea
                 id="mesh-prompt"
                 value={form.prompt}
@@ -375,11 +383,15 @@ export default function MeshStudio({
                 onChange={(e) =>
                   setForm((f) => ({ ...f, prompt: e.target.value }))
                 }
-                placeholder="A burgundy ceramic teapot, rounded body, curved spout and a small lid…"
+                placeholder={t(
+                  "A burgundy ceramic teapot, rounded body, curved spout and a small lid…",
+                )}
               />
               <small>
-                Qwen creates a reference image, then TRELLIS.2 builds the
-                object. Both run locally.
+                {" "}
+                {t(
+                  "Qwen creates a reference image, then TRELLIS.2 builds the object. Both run locally.",
+                )}{" "}
               </small>
               {qwen?.status !== "installed" && (
                 <button
@@ -387,13 +399,14 @@ export default function MeshStudio({
                   className="text-link"
                   onClick={() => navigate("/models")}
                 >
-                  Install Qwen to use text prompts
+                  {" "}
+                  {t("Install Qwen to use text prompts")}{" "}
                 </button>
               )}
             </div>
           )}
           <div className="mesh-model">
-            <label>Model</label>
+            <label> {t("Model")} </label>
             <button type="button" onClick={() => navigate("/models")}>
               <span
                 className={`status-dot ${model?.status === "installed" ? "ready" : ""}`}
@@ -401,11 +414,14 @@ export default function MeshStudio({
               <span>
                 <strong>TRELLIS.2</strong>
                 <small>
-                  {model?.busy
-                    ? model.operation?.phase
-                    : model?.status === "installed"
-                      ? "Ready · Q8"
-                      : "Install in model library"}
+                  {" "}
+                  {t(
+                    model?.busy
+                      ? model.operation?.phase
+                      : model?.status === "installed"
+                        ? "Ready · Q8"
+                        : "Install in model library",
+                  )}{" "}
                 </small>
               </span>
               <ChevronDown size={14} />
@@ -413,7 +429,7 @@ export default function MeshStudio({
           </div>
           <div className="mesh-fields">
             <div className="mesh-field">
-              <span>Resolution</span>
+              <span> {t("Resolution")} </span>
               <div className="segmented">
                 {[512, 1024].map((n) => (
                   <button
@@ -428,9 +444,10 @@ export default function MeshStudio({
               </div>
             </div>
             <label className="mesh-field">
-              Sampling steps
+              {" "}
+              {t("Sampling steps")}{" "}
               <input
-                aria-label="Sampling steps"
+                aria-label={t("Sampling steps")}
                 type="number"
                 min={4}
                 max={30}
@@ -441,9 +458,10 @@ export default function MeshStudio({
               />
             </label>
             <label className="mesh-field">
-              Texture resolution
+              {" "}
+              {t("Texture resolution")}{" "}
               <select
-                aria-label="Texture resolution"
+                aria-label={t("Texture resolution")}
                 value={form.texture_size}
                 disabled={!form.texture}
                 onChange={(e) => setNumber("texture_size", e.target.value)}
@@ -456,9 +474,10 @@ export default function MeshStudio({
               </select>
             </label>
             <label className="mesh-field">
-              Target triangles
+              {" "}
+              {t("Target triangles")}{" "}
               <input
-                aria-label="Target triangles"
+                aria-label={t("Target triangles")}
                 type="number"
                 min={1000}
                 max={300000}
@@ -468,10 +487,11 @@ export default function MeshStudio({
               />
             </label>
             <label className="mesh-field">
-              Seed
+              {" "}
+              {t("Seed")}{" "}
               <div className="mesh-seed">
                 <input
-                  aria-label="Mesh seed"
+                  aria-label={t("Mesh seed")}
                   type="number"
                   min={0}
                   max={4294967295}
@@ -481,7 +501,7 @@ export default function MeshStudio({
                 <button
                   type="button"
                   className="icon-btn"
-                  aria-label="Randomize mesh seed"
+                  aria-label={t("Randomize mesh seed")}
                   onClick={() =>
                     setForm((f) => ({
                       ...f,
@@ -495,7 +515,7 @@ export default function MeshStudio({
             </label>
           </div>
           <details className="mesh-advanced">
-            <summary>More settings</summary>
+            <summary> {t("More settings")} </summary>
             <label>
               <input
                 type="checkbox"
@@ -503,8 +523,8 @@ export default function MeshStudio({
                 onChange={(e) =>
                   setForm((f) => ({ ...f, texture: e.target.checked }))
                 }
-              />
-              Generate PBR material
+              />{" "}
+              {t("Generate PBR material")}{" "}
             </label>
             <label>
               <input
@@ -516,13 +536,14 @@ export default function MeshStudio({
                     background_removal: e.target.checked ? "birefnet" : "auto",
                   }))
                 }
-              />
-              Remove background again
+              />{" "}
+              {t("Remove background again")}{" "}
             </label>
             <p>
-              512³ is the lighter option. 1024³ adds detail and takes longer.
-              Triangle counts are targets; UV boundaries can limit
-              simplification.
+              {" "}
+              {t(
+                "512³ is the lighter option. 1024³ adds detail and takes longer. Triangle counts are targets; UV boundaries can limit simplification.",
+              )}{" "}
             </p>
           </details>
           <button
@@ -530,9 +551,8 @@ export default function MeshStudio({
             type="submit"
             disabled={busy || !canGenerate}
           >
-            {busy ? <LoaderCircle size={17} className="spin" /> : null}Generate
-            3D
-            <ArrowRight size={18} />
+            {busy ? <LoaderCircle size={17} className="spin" /> : null}{" "}
+            {t("Generate 3D")} <ArrowRight size={18} />
           </button>
         </form>
         <div className="mesh-center">
@@ -551,7 +571,7 @@ export default function MeshStudio({
             <div className="mesh-job" key={job.id}>
               <div>
                 <LoaderCircle className="spin" size={16} />
-                <strong>{job.phase}</strong>
+                <strong> {t(job.phase)} </strong>
                 <button
                   className="text-link"
                   onClick={() =>
@@ -560,31 +580,35 @@ export default function MeshStudio({
                       .catch((e) => setError(e.message))
                   }
                 >
-                  Cancel
+                  {" "}
+                  {t("Cancel")}{" "}
                 </button>
               </div>
               <progress value={job.progress} max={100} />
               <small>
-                {job.status === "queued"
-                  ? "Waiting for the GPU"
-                  : "You can keep browsing while this runs."}
+                {" "}
+                {t(
+                  job.status === "queued"
+                    ? "Waiting for the GPU"
+                    : "You can keep browsing while this runs.",
+                )}{" "}
               </small>
             </div>
           ))}
           {latestError && !active.length && (
             <details className="mesh-job-error">
-              <summary>Last generation needs attention</summary>
-              <p>{latestError.error}</p>
+              <summary> {t("Last generation needs attention")} </summary>
+              <p> {t(latestError.error)} </p>
             </details>
           )}
         </div>
         <aside className="mesh-assets">
           <div className="mesh-assets-head">
-            <h2>Project assets</h2>
+            <h2> {t("Project assets")} </h2>
             <button
               className="icon-btn"
-              aria-label="Import GLB"
-              title="Import GLB (up to 64 MB)"
+              aria-label={t("Import GLB")}
+              title={t("Import GLB (up to 64 MB)")}
               onClick={() => meshInput.current?.click()}
               disabled={busy}
             >
@@ -594,10 +618,10 @@ export default function MeshStudio({
           <div className="mesh-search">
             <Search size={14} />
             <input
-              aria-label="Search meshes"
+              aria-label={t("Search meshes")}
               value={query}
               onChange={(e) => setQuery(e.target.value)}
-              placeholder="Search objects"
+              placeholder={t("Search objects")}
             />
           </div>
           <div className="mesh-filter">
@@ -605,17 +629,18 @@ export default function MeshStudio({
               className={filter === "all" ? "active" : ""}
               onClick={() => setFilter("all")}
             >
-              All
+              {" "}
+              {t("All")}{" "}
             </button>
             <button
-              aria-label="Favorite meshes"
+              aria-label={t("Favorite meshes")}
               className={filter === "favorites" ? "active" : ""}
               onClick={() => setFilter("favorites")}
             >
               <Star size={15} />
             </button>
             <button
-              aria-label="Mesh trash"
+              aria-label={t("Mesh trash")}
               className={filter === "trash" ? "active" : ""}
               onClick={() => setFilter("trash")}
             >
@@ -632,8 +657,11 @@ export default function MeshStudio({
                 <img src={asset.thumbnail_url} alt="" />
                 <span>{asset.name}</span>
                 <small>
-                  {count((asset.metadata.stats as MeshStats)?.triangles)}{" "}
-                  triangles{asset.favorite ? " · ★" : ""}
+                  {" "}
+                  {t(
+                    count((asset.metadata.stats as MeshStats)?.triangles),
+                  )}{" "}
+                  {t("triangles")} {t(asset.favorite ? " · ★" : "")}{" "}
                 </small>
               </button>
             ))}
@@ -641,20 +669,24 @@ export default function MeshStudio({
               <div className="mesh-assets-empty">
                 <Box size={25} strokeWidth={1.2} />
                 <p>
-                  {filter === "trash"
-                    ? "Removed meshes appear here."
-                    : filter === "favorites"
-                      ? "Star an object to save it here."
-                      : query
-                        ? "No matching objects."
-                        : "Your first object starts with an idea."}
+                  {" "}
+                  {t(
+                    filter === "trash"
+                      ? "Removed meshes appear here."
+                      : filter === "favorites"
+                        ? "Star an object to save it here."
+                        : query
+                          ? "No matching objects."
+                          : "Your first object starts with an idea.",
+                  )}{" "}
                 </p>
                 {filter === "all" && !query && (
                   <button
                     className="text-link"
                     onClick={() => meshInput.current?.click()}
                   >
-                    Import a GLB
+                    {" "}
+                    {t("Import a GLB")}{" "}
                   </button>
                 )}
               </div>
@@ -674,19 +706,21 @@ export default function MeshStudio({
             </button>
             <p>
               {selected.metadata.imported
-                ? "Imported mesh"
-                : `TRELLIS.2 · ${selected.metadata.resolution || form.resolution}³ · Seed ${selected.seed}`}
-              {selected.metadata.elapsed_seconds
-                ? ` · ${Math.round(Number(selected.metadata.elapsed_seconds))} s`
-                : ""}
+                ? t("Imported mesh")
+                : `TRELLIS.2 · ${selected.metadata.resolution || form.resolution}³ · Seed ${selected.seed}`}{" "}
+              {t(
+                selected.metadata.elapsed_seconds
+                  ? ` · ${Math.round(Number(selected.metadata.elapsed_seconds))} s`
+                  : "",
+              )}{" "}
             </p>
           </div>
           <div className="mesh-result-actions">
             <button
               className="icon-btn"
-              aria-label={
-                selected.favorite ? "Unfavorite mesh" : "Favorite mesh"
-              }
+              aria-label={t(
+                selected.favorite ? "Unfavorite mesh" : "Favorite mesh",
+              )}
               onClick={() => void changeAsset({ favorite: !selected.favorite })}
             >
               <Star
@@ -699,7 +733,8 @@ export default function MeshStudio({
                 className="secondary"
                 onClick={() => void changeAsset({ deleted: false })}
               >
-                Restore mesh
+                {" "}
+                {t("Restore mesh")}{" "}
               </button>
             ) : (
               <>
@@ -715,8 +750,7 @@ export default function MeshStudio({
                     setDialog("simplify");
                   }}
                 >
-                  <SlidersHorizontal size={17} />
-                  Simplify
+                  <SlidersHorizontal size={17} /> {t("Simplify")}{" "}
                 </button>
                 <div className="mesh-export-button">
                   <button
@@ -728,12 +762,12 @@ export default function MeshStudio({
                       <LoaderCircle size={16} className="spin" />
                     ) : (
                       <Download size={16} />
-                    )}
-                    Export GLB
+                    )}{" "}
+                    {t("Export GLB")}{" "}
                   </button>
                   <button
                     className="secondary"
-                    aria-label="More export formats"
+                    aria-label={t("More export formats")}
                     onClick={() => setDialog("export")}
                   >
                     <ChevronDown size={17} />
@@ -747,8 +781,10 @@ export default function MeshStudio({
         <div className="mesh-help">
           <Box size={17} />
           <p>
-            Geometry, UVs and materials are saved together. Export to your
-            favorite 3D tool when you’re ready.
+            {" "}
+            {t(
+              "Geometry, UVs and materials are saved together. Export to your favorite 3D tool when you’re ready.",
+            )}{" "}
           </p>
         </div>
       )}
@@ -768,13 +804,15 @@ export default function MeshStudio({
       />
       {dialog === "images" && (
         <Modal
-          title="Choose a project image"
+          title={t("Choose a project image")}
           onClose={() => setDialog(null)}
           wide
         >
           <p className="mesh-dialog-note">
-            Use a complete object with a clear silhouette. TRELLIS.2 takes one
-            reference.
+            {" "}
+            {t(
+              "Use a complete object with a clear silhouette. TRELLIS.2 takes one reference.",
+            )}{" "}
           </p>
           <div className="mesh-image-picker">
             {images.map((image) => (
@@ -792,17 +830,21 @@ export default function MeshStudio({
           </div>
           {!images.length && (
             <p className="mesh-dialog-note">
-              This project has no generated images yet. Upload a reference or
-              create one in Images.
+              {" "}
+              {t(
+                "This project has no generated images yet. Upload a reference or create one in Images.",
+              )}{" "}
             </p>
           )}
         </Modal>
       )}
       {dialog === "export" && selected && (
-        <Modal title="Export your object" onClose={() => setDialog(null)}>
+        <Modal title={t("Export your object")} onClose={() => setDialog(null)}>
           <p className="mesh-dialog-note">
-            GLB and glTF preserve the complete PBR material. STL and PLY are
-            geometry exports.
+            {" "}
+            {t(
+              "GLB and glTF preserve the complete PBR material. STL and PLY are geometry exports.",
+            )}{" "}
           </p>
           <div className="mesh-export-grid">
             {[
@@ -825,30 +867,40 @@ export default function MeshStudio({
                 }
                 onClick={() => void download(format)}
               >
-                <strong>{exporting === format ? "Exporting…" : label}</strong>
-                <small>{note}</small>
+                <strong>
+                  {" "}
+                  {t(exporting === format ? "Exporting…" : label)}{" "}
+                </strong>
+                <small> {t(note)} </small>
                 <Download size={17} />
               </button>
             ))}
           </div>
           {error && (
             <p className="error-banner" role="alert">
-              {error}
+              {" "}
+              {t(error)}{" "}
             </p>
           )}
         </Modal>
       )}
       {dialog === "simplify" && selected && (
-        <Modal title="Make a lighter version" onClose={() => setDialog(null)}>
+        <Modal
+          title={t("Make a lighter version")}
+          onClose={() => setDialog(null)}
+        >
           <div className="mesh-dialog-body">
             <p>
-              Reduce triangles while retaining UVs and materials. A separate
-              version is saved; the original stays in your project.
+              {" "}
+              {t(
+                "Reduce triangles while retaining UVs and materials. A separate version is saved; the original stays in your project.",
+              )}{" "}
             </p>
             <label>
-              Target triangles
+              {" "}
+              {t("Target triangles")}{" "}
               <input
-                aria-label="Simplified triangle target"
+                aria-label={t("Simplified triangle target")}
                 type="number"
                 min={1000}
                 max={Math.min(stats?.triangles || 300000, 300000)}
@@ -858,10 +910,13 @@ export default function MeshStudio({
               />
             </label>
             <small>
-              Current mesh: {count(stats?.triangles)} triangles. Texture seams
-              may keep the result above the target.
+              {" "}
+              {t("Current mesh:")} {t(count(stats?.triangles))}{" "}
+              {t(
+                "triangles. Texture seams may keep the result above the target.",
+              )}{" "}
             </small>
-            {error && <p role="alert">{error}</p>}
+            {error && <p role="alert"> {t(error)} </p>}
             <button
               className="primary"
               disabled={
@@ -869,19 +924,20 @@ export default function MeshStudio({
               }
               onClick={() => void submit(true)}
             >
-              Save simplified version
-              <ArrowRight size={17} />
+              {" "}
+              {t("Save simplified version")} <ArrowRight size={17} />
             </button>
           </div>
         </Modal>
       )}
       {dialog === "details" && selected && (
-        <Modal title="Object details" onClose={() => setDialog(null)}>
+        <Modal title={t("Object details")} onClose={() => setDialog(null)}>
           <div className="mesh-dialog-body">
             <label>
-              Name
+              {" "}
+              {t("Name")}{" "}
               <input
-                aria-label="Mesh name"
+                aria-label={t("Mesh name")}
                 defaultValue={selected.name}
                 key={selected.id}
                 maxLength={120}
@@ -892,55 +948,57 @@ export default function MeshStudio({
               />
             </label>
             <label>
-              Project
+              {" "}
+              {t("Project")}{" "}
               <select
                 value={selected.project_id}
-                aria-label="Move mesh to project"
+                aria-label={t("Move mesh to project")}
                 onChange={(e) =>
                   void changeAsset({ project_id: e.target.value })
                 }
               >
                 {snapshot.projects.map((p) => (
                   <option value={p.id} key={p.id}>
-                    {p.name}
+                    {" "}
+                    {projectName(p)}{" "}
                   </option>
                 ))}
               </select>
             </label>
             <dl className="mesh-stats">
               <div>
-                <dt>Triangles</dt>
-                <dd>{count(stats?.triangles)}</dd>
+                <dt> {t("Triangles")} </dt>
+                <dd> {t(count(stats?.triangles))} </dd>
               </div>
               <div>
-                <dt>Vertices</dt>
-                <dd>{count(stats?.vertices)}</dd>
+                <dt> {t("Vertices")} </dt>
+                <dd> {t(count(stats?.vertices))} </dd>
               </div>
               <div>
-                <dt>UV coordinates</dt>
-                <dd>{stats?.has_uv ? "Included" : "None"}</dd>
+                <dt> {t("UV coordinates")} </dt>
+                <dd> {t(stats?.has_uv ? "Included" : "None")} </dd>
               </div>
               <div>
-                <dt>Materials</dt>
+                <dt> {t("Materials")} </dt>
                 <dd>{stats?.materials || 0}</dd>
               </div>
             </dl>
             {selected.prompt && <p>{selected.prompt}</p>}
             <div className="mesh-textures">
-              {textures.map((t) => (
+              {textures.map((texture) => (
                 <a
-                  key={t.name}
-                  href={`/api/meshes/${selected.id}/textures/${t.name}`}
+                  key={texture.name}
+                  href={`/api/meshes/${selected.id}/textures/${texture.name}`}
                   target="_blank"
                   rel="noreferrer"
                 >
                   <img
-                    src={`/api/meshes/${selected.id}/textures/${t.name}`}
-                    alt={t.channel}
+                    src={`/api/meshes/${selected.id}/textures/${texture.name}`}
+                    alt={t(texture.channel)}
                   />
-                  <span>{t.channel}</span>
+                  <span> {t(texture.channel)} </span>
                   <small>
-                    {t.width} × {t.height}
+                    {texture.width} × {texture.height}
                   </small>
                 </a>
               ))}
@@ -952,14 +1010,15 @@ export default function MeshStudio({
                 target="_blank"
                 rel="noreferrer"
               >
-                Generation metadata
+                {" "}
+                {t("Generation metadata")}{" "}
               </a>
               <button
                 className="quiet"
                 onClick={() => void changeAsset({ deleted: !selected.deleted })}
               >
-                <Trash2 size={16} />
-                {selected.deleted ? "Restore" : "Move to trash"}
+                <Trash2 size={16} />{" "}
+                {t(selected.deleted ? "Restore" : "Move to trash")}{" "}
               </button>
             </div>
           </div>

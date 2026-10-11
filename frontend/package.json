@@ -1,12 +1,13 @@
 {
   "name": "local-atelier",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "private": true,
   "type": "module",
   "scripts": {
     "dev": "vite --host 127.0.0.1",
     "build": "tsc -b && vite build",
     "check": "tsc -b --pretty false",
+    "check:locales": "node scripts/check-locales.cjs",
     "format": "prettier --write src"
   },
   "dependencies": {

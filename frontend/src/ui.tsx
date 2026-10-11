@@ -1,3 +1,4 @@
+import { t } from "./i18n";
 import { useEffect, useRef, type ReactNode } from "react";
 import { X, LoaderCircle, FolderPlus, ArrowUpRight } from "lucide-react";
 
@@ -27,10 +28,10 @@ export function Modal({
       }}
     >
       <div className="modal-head">
-        <h2>{title}</h2>
+        <h2> {t(title)} </h2>
         <button
           className="icon-btn"
-          aria-label="Close dialog"
+          aria-label={t("Close dialog")}
           onClick={onClose}
         >
           <X size={20} />
@@ -54,8 +55,8 @@ export function Empty({
       <div className="empty-icon">
         <FolderPlus size={30} strokeWidth={1.3} />
       </div>
-      <h2>{title}</h2>
-      <p>{description}</p>
+      <h2> {t(title)} </h2>
+      <p> {t(description)} </p>
       {children}
     </div>
   );
@@ -63,7 +64,8 @@ export function Empty({
 export function Loading() {
   return (
     <div className="loading">
-      <LoaderCircle className="spin" size={20} /> Connecting to your studio…
+      <LoaderCircle className="spin" size={20} />{" "}
+      {t("Connecting to your studio…")}{" "}
     </div>
   );
 }

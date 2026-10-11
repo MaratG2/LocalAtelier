@@ -1,3 +1,4 @@
+import { t, projectName, assetCount } from "./i18n";
 import {
   ArrowRight,
   Plus,
@@ -22,12 +23,16 @@ export function Home({
     <div className="page home-page">
       <header className="page-head">
         <div>
-          <h1>Your creative workspace</h1>
-          <p>Make something worth keeping. Everything stays on your machine.</p>
+          <h1> {t("Your creative workspace")} </h1>
+          <p>
+            {" "}
+            {t(
+              "Make something worth keeping. Everything stays on your machine.",
+            )}{" "}
+          </p>
         </div>
         <button className="secondary" onClick={onNewProject}>
-          <Plus size={17} />
-          New project
+          <Plus size={17} /> {t("New project")}{" "}
         </button>
       </header>
       <section className="home-feature">
@@ -35,18 +40,23 @@ export function Home({
           <div className="feature-symbol">
             <Image size={29} strokeWidth={1.6} />
           </div>
-          <h2>A thought. An image.</h2>
+          <h2> {t("A thought. An image.")} </h2>
           <p>
-            Create, edit and combine references with models running on your GPU.
+            {" "}
+            {t(
+              "Create, edit and combine references with models running on your GPU.",
+            )}{" "}
           </p>
           <button className="primary" onClick={() => navigate("/images")}>
-            Open image studio
-            <ArrowRight size={18} />
+            {" "}
+            {t("Open image studio")} <ArrowRight size={18} />
           </button>
         </div>
         <img
           src="/atelier-vase.png"
-          alt="Sculptural green ceramic vase with a leafy branch in soft sunlight"
+          alt={t(
+            "Sculptural green ceramic vase with a leafy branch in soft sunlight",
+          )}
         />
       </section>
       <div className="future-services">
@@ -74,21 +84,22 @@ export function Home({
             </div>
             <div>
               <div className="service-title">
-                <h3>{name}</h3>
-                {name === "3D studio" || name === "Video" ? (
+                <h3> {t(name)} </h3>
+                {name === t("3D studio") || name === t("Video") ? (
                   <button
                     className="text-link"
                     onClick={() =>
                       navigate(name === "Video" ? "/video" : "/3d")
                     }
                   >
-                    Open studio <ArrowRight size={15} />
+                    {" "}
+                    {t("Open studio")} <ArrowRight size={15} />
                   </button>
                 ) : (
-                  <span className="badge muted">Planned</span>
+                  <span className="badge muted"> {t("Planned")} </span>
                 )}
               </div>
-              <p>{description}</p>
+              <p> {t(description)} </p>
             </div>
           </section>
         ))}
@@ -96,9 +107,10 @@ export function Home({
       <div className="home-lower">
         <section className="surface">
           <div className="section-head">
-            <h2>Recent projects</h2>
+            <h2> {t("Recent projects")} </h2>
             <button className="text-link" onClick={() => navigate("/projects")}>
-              View all
+              {" "}
+              {t("View all")}{" "}
             </button>
           </div>
           <div className="recent-projects">
@@ -116,26 +128,23 @@ export function Home({
                   </div>
                 )}
                 <span>
-                  <strong>{p.name}</strong>
-                  <small>
-                    {p.asset_count || 0}{" "}
-                    {(p.asset_count || 0) === 1 ? "asset" : "assets"}
-                  </small>
+                  <strong> {projectName(p)} </strong>
+                  <small> {t(assetCount(p.asset_count || 0))} </small>
                 </span>
                 <ChevronRight size={17} />
               </button>
             ))}
           </div>
           <button className="new-project-row" onClick={onNewProject}>
-            <Plus size={18} />
-            New project
+            <Plus size={18} /> {t("New project")}{" "}
           </button>
         </section>
         <section className="surface">
           <div className="section-head">
-            <h2>Your models</h2>
+            <h2> {t("Your models")} </h2>
             <button className="text-link" onClick={() => navigate("/models")}>
-              Manage models
+              {" "}
+              {t("Manage models")}{" "}
             </button>
           </div>
           <div className="model-rows">
@@ -149,14 +158,18 @@ export function Home({
                 <span
                   className={`model-state ${m.status === "installed" ? "ready" : ""}`}
                 >
-                  <i />
-                  {m.busy
-                    ? m.operation?.phase
-                    : m.status === "installed"
-                      ? "Installed"
-                      : "Not installed"}
+                  <i />{" "}
+                  {t(
+                    m.busy
+                      ? m.operation?.phase
+                      : m.status === "installed"
+                        ? "Installed"
+                        : "Not installed",
+                  )}{" "}
                 </span>
-                <small>{m.vram_gb} GB profile</small>
+                <small>
+                  {m.vram_gb} {t("GB profile")}{" "}
+                </small>
                 <ChevronRight size={16} />
               </button>
             ))}

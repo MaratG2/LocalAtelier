@@ -1,3 +1,4 @@
+import { t } from "./i18n";
 import { useEffect, useRef, useState } from "react";
 import * as THREE from "three";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
@@ -311,7 +312,7 @@ export default function MeshViewer({
     if (live.current) live.current.controls.autoRotate = rotate;
   }, [rotate, state]);
   return (
-    <section className="mesh-viewport" aria-label="3D viewport">
+    <section className="mesh-viewport" aria-label={t("3D viewport")}>
       <div ref={host} className="mesh-canvas" />
       <div className="mesh-view-toolbar">
         <div className="segmented">
@@ -322,15 +323,16 @@ export default function MeshViewer({
               onClick={() => setMode(value)}
               disabled={!url}
             >
-              {value[0].toUpperCase() + value.slice(1)}
+              {" "}
+              {t(value[0].toUpperCase() + value.slice(1))}{" "}
             </button>
           ))}
         </div>
         <div className="mesh-view-actions">
           <button
             className={`icon-btn ${grid ? "selected" : ""}`}
-            title="Toggle ground grid"
-            aria-label="Toggle ground grid"
+            title={t("Toggle ground grid")}
+            aria-label={t("Toggle ground grid")}
             aria-pressed={grid}
             onClick={() => setGrid(!grid)}
           >
@@ -338,8 +340,8 @@ export default function MeshViewer({
           </button>
           <button
             className={`icon-btn ${rotate ? "selected" : ""}`}
-            title="Auto rotate"
-            aria-label="Auto rotate"
+            title={t("Auto rotate")}
+            aria-label={t("Auto rotate")}
             aria-pressed={rotate}
             onClick={() => setRotate(!rotate)}
           >
@@ -347,16 +349,16 @@ export default function MeshViewer({
           </button>
           <button
             className="icon-btn"
-            title="Reset view"
-            aria-label="Reset view"
+            title={t("Reset view")}
+            aria-label={t("Reset view")}
             onClick={() => live.current?.reset()}
           >
             <Maximize size={17} />
           </button>
           <button
             className="icon-btn"
-            title="Save preview image"
-            aria-label="Save preview image"
+            title={t("Save preview image")}
+            aria-label={t("Save preview image")}
             disabled={state !== "ready"}
             onClick={() => live.current?.capture()}
           >
@@ -367,48 +369,58 @@ export default function MeshViewer({
       {url && (
         <select
           className="mesh-channel"
-          aria-label="Material channel"
+          aria-label={t("Material channel")}
           value={mode}
           onChange={(e) => setMode(e.target.value as ViewMode)}
         >
-          <option value="material">PBR material</option>
-          <option value="clay">Clay</option>
-          <option value="wireframe">Wireframe</option>
-          <option value="base-color">Base color</option>
-          <option value="roughness">Roughness</option>
-          <option value="metallic">Metallic</option>
-          <option value="normals">Surface normals</option>
+          <option value="material"> {t("PBR material")} </option>
+          <option value="clay"> {t("Clay")} </option>
+          <option value="wireframe"> {t("Wireframe")} </option>
+          <option value="base-color"> {t("Base color")} </option>
+          <option value="roughness"> {t("Roughness")} </option>
+          <option value="metallic"> {t("Metallic")} </option>
+          <option value="normals"> {t("Surface normals")} </option>
         </select>
       )}
       {state !== "ready" && (
         <div className="mesh-view-empty">
           <Box size={40} strokeWidth={1.1} />
           <h2>
-            {state === "loading"
-              ? "Opening your object…"
-              : state === "error"
-                ? "Preview unavailable"
-                : "An idea, with another dimension"}
+            {" "}
+            {t(
+              state === "loading"
+                ? "Opening your object…"
+                : state === "error"
+                  ? "Preview unavailable"
+                  : "An idea, with another dimension",
+            )}{" "}
           </h2>
           <p>
-            {state === "error"
-              ? error
-              : state === "loading"
-                ? "Loading geometry and materials"
-                : "Choose a reference image or describe an object to get started."}
+            {" "}
+            {t(
+              state === "error"
+                ? error
+                : state === "loading"
+                  ? "Loading geometry and materials"
+                  : "Choose a reference image or describe an object to get started.",
+            )}{" "}
           </p>
         </div>
       )}
       <div className="mesh-view-caption">
-        <span>{caption}</span>
+        <span> {t(caption)} </span>
         <span>
-          {state === "ready"
-            ? "Drag to orbit · Scroll to zoom"
-            : "Your mesh will appear here"}
+          {" "}
+          {t(
+            state === "ready"
+              ? "Drag to orbit · Scroll to zoom"
+              : "Your mesh will appear here",
+          )}{" "}
         </span>
       </div>
       <span className="sr-only" role="status">
-        {state === "ready" ? "3D model loaded" : ""}
+        {" "}
+        {t(state === "ready" ? "3D model loaded" : "")}{" "}
       </span>
     </section>
   );

@@ -81,6 +81,8 @@ Start with 1K and the default steps. The queue runs one image, mesh or video job
 
 ## Development
 
+See [creative workflows](docs/creative-workflows.md) for English/Russian localization, incognito sessions, project art direction, sprite sheets and tile maps.
+
 ```powershell
 # API checks use isolated temporary storage and a fake GPU worker.
 .venv/Scripts/python.exe -m unittest discover -s tests -v

@@ -83,6 +83,11 @@ def generate(runtime, request, callback, cancelled):
             media_path = folder / 'inputs.json'; media_path.write_text(json.dumps(media), encoding='utf-8')
             args += ['--media', media_path]
         env = environment(bundle)
+        if getattr(store, 'temporary', False):
+            args += ['--no-tuning']
+            scratch = runtime.root / 'h3-private'
+            scratch.mkdir(parents=True, exist_ok=True)
+            env.update(FREEVIDEO_HOME=str(scratch), TEMP=str(scratch), TMP=str(scratch), TMPDIR=str(scratch))
         env.update(HF_HUB_OFFLINE='1', TRANSFORMERS_OFFLINE='1')
         with runtime.lock:
             callback('Switching model · freeing GPU memory', 0)

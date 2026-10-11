@@ -1,3 +1,4 @@
+import { t, locale } from "./i18n";
 export async function api<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch("/api" + path, {
     ...init,
@@ -15,7 +16,7 @@ export async function api<T>(path: string, init?: RequestInit): Promise<T> {
     );
   }
   if (!response.ok)
-    throw new Error(payload.error || `Request failed (${response.status})`);
+    throw new Error(t(payload.error || `Request failed (${response.status})`));
   return payload;
 }
 export const post = <T>(path: string, data: unknown = {}) =>
@@ -24,10 +25,10 @@ export const patch = <T>(path: string, data: unknown) =>
   api<T>(path, { method: "PATCH", body: JSON.stringify(data) });
 export const bytes = (value: number) =>
   value >= 1e9
-    ? `${(value / 1e9).toFixed(1)} GB`
-    : `${Math.round(value / 1e6)} MB`;
+    ? `${(value / 1e9).toLocaleString(locale(), { maximumFractionDigits: 1 })} ${t("GB")}`
+    : `${Math.round(value / 1e6).toLocaleString(locale())} ${t("MB")}`;
 export const date = (value: number) =>
-  new Date(value * 1000).toLocaleDateString(undefined, {
+  new Date(value * 1000).toLocaleDateString(locale(), {
     month: "short",
     day: "numeric",
   });

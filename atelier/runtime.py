@@ -27,11 +27,16 @@ class Runtime:
         self.lock = threading.RLock()
         self.phase = "Idle"
         self.token = uuid.uuid4().hex
-        self.root = store.root / "runtime"
+        self.worker_root = None
         self.root.mkdir(exist_ok=True)
         atexit.register(self.release)
 
+    @property
+    def root(self):
+        return self.store.root / 'runtime'
+
     def _start(self, args, cwd, env, name):
+        self.root.mkdir(parents=True, exist_ok=True)
         log = (self.root / f"{name}.log").open("w", encoding="utf-8")
         self.log_handles.append(log)
         process = subprocess.Popen([str(a) for a in args], cwd=cwd, env=env, stdout=log, stderr=subprocess.STDOUT,
@@ -65,10 +70,12 @@ class Runtime:
         model = CATALOG[model_id]
         url = f"http://127.0.0.1:{model['port']}"
         with self.lock:
-            if self.active_model == model_id and all(p.poll() is None for p in self.processes):
+            if self.worker_root == self.root and self.active_model == model_id and all(p.poll() is None for p in self.processes):
                 return url
             callback("Switching model · freeing GPU memory", 0)
             self.release()
+            self.worker_root = self.root
+            self.root.mkdir(parents=True, exist_ok=True)
             for port in ([model['port'], 7893] if model_id == 'qwen-image-2.1' else [model['port']]):
                 with socket.socket() as probe:
                     try:
@@ -87,11 +94,17 @@ class Runtime:
                    "TORCHINDUCTOR_CACHE_DIR": str(cache / 'inductor'),
                    "DO_NOT_TRACK": "1", "HF_HUB_OFFLINE": "1", "TRANSFORMERS_OFFLINE": "1",
                    "ATELIER_WORKER_TOKEN": self.token, "PYTHONDONTWRITEBYTECODE": "1"}
+            if getattr(self.store, 'temporary', False):
+                scratch = self.root / 'temp'
+                scratch.mkdir(exist_ok=True)
+                env.update(TEMP=str(scratch), TMP=str(scratch), TMPDIR=str(scratch))
             self.active_model = model_id
             self.phase = f"Loading {model['name']}"
             callback(self.phase, 0)
             try:
                 if model_id == "qwen-image-2.1":
+                    for directory in ('qwen-output', 'qwen-input', 'qwen-temp', 'qwen-user'):
+                        (self.root / directory).mkdir(exist_ok=True)
                     engine_root = root / ".runtime/ComfyUI"
                     paths = self.root / "qwen-paths.yaml"
                     paths.write_text("local_atelier:\n  base_path: " + json.dumps(str(weights_at(model, root))) + "\n  diffusion_models: diffusion_models\n  text_encoders: text_encoders\n  vae: vae\n", encoding="utf-8")
@@ -100,7 +113,9 @@ class Runtime:
                     env["QWEN_TEXT_ENCODER"] = "qwen3vl_8b_int8_convrot.safetensors"
                     args = [python_at(root), "-u", "main.py", "--listen", "127.0.0.1", "--port", engine_port,
                             "--extra-model-paths-config", paths, "--disable-auto-launch", "--use-pytorch-cross-attention",
-                            "--reserve-vram", "1.0", "--disable-all-custom-nodes", "--disable-partner-nodes"]
+                            "--reserve-vram", "1.0", "--disable-all-custom-nodes", "--disable-partner-nodes",
+                            "--output-directory", self.root / 'qwen-output', "--input-directory", self.root / 'qwen-input',
+                            "--temp-directory", self.root / 'qwen-temp', "--user-directory", self.root / 'qwen-user', "--disable-metadata"]
                     if self.store.setting("low_vram", False):
                         args.append("--lowvram")
                     self._start(args, engine_root, env, "qwen-engine")

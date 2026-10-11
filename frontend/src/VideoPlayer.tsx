@@ -1,3 +1,4 @@
+import { t } from "./i18n";
 import { useRef, useState } from "react";
 import { Maximize, Pause, Play, Volume2, VolumeX } from "lucide-react";
 import type { Asset } from "./types";
@@ -60,29 +61,31 @@ export default function VideoPlayer({ asset }: { asset: Asset }) {
         {!playing && (
           <button
             className="clip-play-overlay"
-            aria-label="Play video"
+            aria-label={t("Play video")}
             onClick={toggle}
           >
             <Play size={25} fill="currentColor" />
           </button>
         )}
         <span className="clip-version">
-          {asset.metadata.preview ? "Preview" : "Finished clip"}
+          {" "}
+          {t(asset.metadata.preview ? "Preview" : "Finished clip")}{" "}
         </span>
       </div>
       <div className="clip-controls">
         <button
           className="icon-btn"
-          aria-label={playing ? "Pause video" : "Play video"}
+          aria-label={t(playing ? "Pause video" : "Play video")}
           onClick={toggle}
         >
           {playing ? <Pause size={18} /> : <Play size={18} />}
         </button>
         <span className="clip-time">
-          {clock(time)} / {clock(duration)}
+          {" "}
+          {t(clock(time))} / {t(clock(duration))}{" "}
         </span>
         <input
-          aria-label="Seek video"
+          aria-label={t("Seek video")}
           type="range"
           min="0"
           max={duration || 1}
@@ -92,14 +95,14 @@ export default function VideoPlayer({ asset }: { asset: Asset }) {
         />
         <button
           className="icon-btn"
-          aria-label={muted ? "Unmute audio" : "Mute audio"}
+          aria-label={t(muted ? "Unmute audio" : "Mute audio")}
           onClick={() => setMuted(!muted)}
         >
           {muted ? <VolumeX size={18} /> : <Volume2 size={18} />}
         </button>
         <input
           className="clip-volume"
-          aria-label="Audio volume"
+          aria-label={t("Audio volume")}
           type="range"
           min="0"
           max="1"
@@ -114,7 +117,7 @@ export default function VideoPlayer({ asset }: { asset: Asset }) {
         />
         <button
           className="icon-btn"
-          aria-label="Full screen"
+          aria-label={t("Full screen")}
           onClick={() => {
             const action = document.fullscreenElement
               ? document.exitFullscreen()
@@ -129,7 +132,7 @@ export default function VideoPlayer({ asset }: { asset: Asset }) {
       </div>
       <button
         className="clip-filmstrip"
-        aria-label="Seek to a frame"
+        aria-label={t("Seek to a frame")}
         onClick={(e) => {
           const rect = e.currentTarget.getBoundingClientRect();
           seek(
@@ -145,13 +148,14 @@ export default function VideoPlayer({ asset }: { asset: Asset }) {
       >
         <img
           src={`/api/videos/${asset.id}/filmstrip`}
-          alt="Five frames from this clip"
+          alt={t("Five frames from this clip")}
         />
         <i style={{ left: `${(time / Math.max(duration, 1)) * 100}%` }} />
       </button>
       {error && (
         <p className="error-text" role="alert">
-          {error}
+          {" "}
+          {t(error)}{" "}
         </p>
       )}
     </div>

@@ -18,6 +18,10 @@ def integer(value, name, low, high):
 def validate(data, store):
     if not isinstance(data, dict):
         raise ValueError("Expected a JSON object")
+    from .styles import apply_style
+    from .gamedev import validate_tool, tool_prompt
+    data, style = apply_style(data, store)
+    tool = validate_tool(data.pop('game_asset', None))
     allowed = {"project_id", "model_id", "mode", "prompt", "width", "height", "seed", "num_inference_steps", "batch_size", "reference_ids", "keep_original_aspect", "transparent_background"}
     if set(data) - allowed:
         raise ValueError("Unsupported generation settings")
@@ -31,7 +35,7 @@ def validate(data, store):
         raise ValueError("Select a supported image model")
     model = CATALOG[model_id]
     prompt = data.get("prompt", "")
-    if not isinstance(prompt, str) or not prompt.strip() or len(prompt) > 12000:
+    if not isinstance(style['user_prompt'], str) or not style['user_prompt'].strip() or len(style['user_prompt']) > 12000:
         raise ValueError("Describe your image using 1–12,000 characters")
     mode = data.get("mode", "t2i")
     if not isinstance(mode, str) or mode not in {"t2i", "edit", "reference"}:
@@ -51,6 +55,14 @@ def validate(data, store):
         request[name] = integer(data.get(name, default), name, low, high)
     if request["width"] % 64 or request["height"] % 64:
         raise ValueError("Dimensions must be multiples of 64")
+    if tool:
+        import math
+        longest, shortest = max(tool['columns'], tool['rows']), min(tool['columns'], tool['rows'])
+        if longest > 4 * shortest:
+            raise ValueError('Grid aspect ratio cannot exceed 4:1. Add more rows or columns.')
+        cell = min(model['max_size'] // longest // 64 * 64,
+                   math.ceil(max(512 / shortest, max(request['width'], request['height']) / longest) / 64) * 64)
+        request.update(width=tool['columns'] * cell, height=tool['rows'] * cell)
     if request["seed"] + request["batch_size"] - 1 > 4294967295:
         raise ValueError("Seed has no room for the selected batch")
     for name in ("keep_original_aspect", "transparent_background"):
@@ -62,6 +74,11 @@ def validate(data, store):
         raise ValueError("This model does not support native transparency")
     if mode == "t2i" and request["keep_original_aspect"]:
         raise ValueError("Aspect preservation requires a reference")
+    request.update(style)
+    if tool:
+        request['game_asset'] = tool
+        request['prompt'] += '\n\n' + tool_prompt(tool)
+        request['keep_original_aspect'] = False
     return request
 
 
@@ -115,7 +132,7 @@ class GenerationQueue:
             job_id = identifier()
             self.store.execute("INSERT INTO jobs(id,project_id,model_id,status,phase,total,request,created,updated) VALUES(?,?,?,'queued','Queued',?,?,?,?)",
                                (job_id, request["project_id"], request["model_id"], request["batch_size"], json.dumps(request), now(), now()))
-            self.queue.put(job_id)
+            self.queue.put((job_id, self.store.context.get() if hasattr(self.store, 'context') else None))
             return self.store.job(job_id)
 
     def cancel(self, job_id):
@@ -131,7 +148,18 @@ class GenerationQueue:
 
     def _work(self):
         while True:
-            job_id = self.queue.get()
+            job_id, session = self.queue.get()
+            if session:
+                # Claim the session before its reaper can dispose a cancelled
+                # queue item. Cleanup checks this flag under the same lock.
+                with self.store.lock:
+                    current = self.store.sessions.get(session)
+                    if current is None or current.closed:
+                        self.cancelled.discard(job_id)
+                        self.queue.task_done()
+                        continue
+                    current.working = True
+            context = self.store.context.set(session) if hasattr(self.store, 'context') else None
             results = []
             try:
                 job = self.store.job(job_id)
@@ -164,9 +192,10 @@ class GenerationQueue:
                             self.store.update_job(job_id, phase=phase, progress=round((index * 100 + value) / request["batch_size"]))
                     seed = request["seed"] + index
                     image, metadata = self.runtime.generate({**request, "seed": seed}, refs, progress)
-                    metadata.update(reference_ids=request["reference_ids"], settings={**request, "seed": seed}, job_id=job_id)
-                    asset = save_image(self.store, image, request["project_id"], kind="generated", name=request["prompt"][:80],
-                                       prompt=request["prompt"], model_id=request["model_id"], seed=seed, metadata=metadata)
+                    metadata.update(reference_ids=request["reference_ids"], settings={**request, "seed": seed}, job_id=job_id, game_asset=request.get('game_asset'), style_prompt=request.get('style_prompt'), style_reference_id=request.get('style_reference_id'))
+                    user_prompt = request.get('user_prompt', request['prompt'])
+                    asset = save_image(self.store, image, request["project_id"], kind="generated", name=user_prompt[:80],
+                                       prompt=user_prompt, model_id=request["model_id"], seed=seed, metadata=metadata)
                     results.append(asset["id"])
                     self.store.update_job(job_id, completed=len(results), result_ids=json.dumps(results))
                 status = "cancelled" if job_id in self.cancelled else "complete"
@@ -175,7 +204,12 @@ class GenerationQueue:
                 stopped = job_id in self.cancelled
                 self.store.update_job(job_id, status="cancelled" if stopped else "error", phase="Stopped" if stopped else "Generation failed", error=None if stopped else str(error)[:3000])
             finally:
-                if self.store.setting("unload_after_job", False):
+                if session or self.store.setting("unload_after_job", False):
                     self.runtime.release()
+                if session:
+                    self.store.current.working = False
+                if context is not None:
+                    self.store.context.reset(context)
+                    self.store.reap()
                 self.cancelled.discard(job_id)
                 self.queue.task_done()

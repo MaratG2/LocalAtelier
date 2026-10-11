@@ -1,3 +1,4 @@
+import { t, projectName, quantity, number } from "./i18n";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   AudioLines,
@@ -58,6 +59,7 @@ export default function VideoStudio({
 }) {
   const [form, setForm] = useState(() => {
     try {
+      if (snapshot.status?.temporary) return defaults;
       return {
         ...defaults,
         ...JSON.parse(
@@ -114,6 +116,7 @@ export default function VideoStudio({
     return () => clearTimeout(timer);
   }, [loadAssets, snapshot.jobs]);
   useEffect(() => {
+    if (snapshot.status?.temporary) return;
     localStorage.setItem(`atelier.video.${projectId}`, JSON.stringify(form));
   }, [form, projectId]);
   useEffect(() => {
@@ -285,13 +288,13 @@ export default function VideoStudio({
     ((5 - (Math.ceil(form.seconds * 24) % 17) + 17) % 17);
   const frameSlot = (target: "first" | "last", asset: Asset | null) => (
     <div className="video-frame-slot">
-      <span>{target === "first" ? "First frame" : "Last frame"}</span>
+      <span> {t(target === "first" ? "First frame" : "Last frame")} </span>
       {asset ? (
         <div className="video-frame-image">
           <img src={asset.thumbnail_url} alt={asset.name} />
           <button
             className="icon-btn"
-            aria-label={`Remove ${target} frame`}
+            aria-label={t(`Remove ${target} frame`)}
             onClick={() =>
               target === "first" ? setFirst(null) : setLast(null)
             }
@@ -302,11 +305,12 @@ export default function VideoStudio({
       ) : (
         <button className="video-frame-add" onClick={() => openUpload(target)}>
           <ImagePlus size={21} />
-          <span>Add image</span>
+          <span> {t("Add image")} </span>
         </button>
       )}
       <button className="text-link" onClick={() => void openPicker(target)}>
-        From project
+        {" "}
+        {t("From project")}{" "}
       </button>
     </div>
   );
@@ -314,19 +318,20 @@ export default function VideoStudio({
     <div className="video-page">
       <header className="page-head">
         <div>
-          <h1>Video studio</h1>
-          <p>Bring your ideas into motion.</p>
+          <h1> {t("Video studio")} </h1>
+          <p> {t("Bring your ideas into motion.")} </p>
         </div>
         <label className="video-project">
           <Folder size={17} />
           <select
-            aria-label="Video project"
+            aria-label={t("Video project")}
             value={projectId}
             onChange={(e) => onProject(e.target.value)}
           >
             {snapshot.projects.map((p) => (
               <option value={p.id} key={p.id}>
-                {p.name}
+                {" "}
+                {projectName(p)}{" "}
               </option>
             ))}
           </select>
@@ -335,7 +340,7 @@ export default function VideoStudio({
       <div className="video-workspace">
         <section
           className="video-config"
-          aria-label="Video generation settings"
+          aria-label={t("Video generation settings")}
         >
           <div className="segmented video-modes">
             {(["text", "frames", "references"] as const).map((value) => (
@@ -345,22 +350,27 @@ export default function VideoStudio({
                 aria-pressed={mode === value}
                 onClick={() => setMode(value)}
               >
-                {value[0].toUpperCase() + value.slice(1)}
+                {" "}
+                {t(value[0].toUpperCase() + value.slice(1))}{" "}
               </button>
             ))}
           </div>
           <label className="video-field">
-            Prompt
+            {" "}
+            {t("Prompt")}{" "}
             <textarea
               value={form.prompt}
               maxLength={12000}
               onChange={(e) => setForm({ ...form, prompt: e.target.value })}
-              placeholder="Describe the scene, movement and sound…"
+              placeholder={t("Describe the scene, movement and sound…")}
               rows={5}
             />
           </label>
           <p className="video-hint">
-            Describe movement, camera direction, dialogue and atmosphere.
+            {" "}
+            {t(
+              "Describe movement, camera direction, dialogue and atmosphere.",
+            )}{" "}
           </p>
           {mode === "frames" && (
             <>
@@ -369,26 +379,32 @@ export default function VideoStudio({
                 {frameSlot("last", last)}
               </div>
               <p className="video-hint">
-                Use either frame, or both to guide the beginning and end.
+                {" "}
+                {t(
+                  "Use either frame, or both to guide the beginning and end.",
+                )}{" "}
               </p>
             </>
           )}
-          {mode === "references" && (
+          {mode === t("references") && (
             <div className="video-references">
               <div className="video-field-heading">
-                <strong>References</strong>
+                <strong> {t("References")} </strong>
                 <span>{refs.length}/12</span>
               </div>
               {refs.map((ref, index) => (
                 <div className="video-reference-row" key={ref.id}>
                   <img src={ref.thumbnail_url} alt="" />
                   <span>
-                    <strong>Reference {index + 1}</strong>
+                    <strong>
+                      {" "}
+                      {t("Reference")} {index + 1}
+                    </strong>
                     <small>{ref.name}</small>
                   </span>
                   <button
                     className="icon-btn"
-                    aria-label={`Remove reference ${index + 1}`}
+                    aria-label={t(`Remove reference ${index + 1}`)}
                     onClick={() => setRefs(refs.filter((r) => r.id !== ref.id))}
                   >
                     <X size={15} />
@@ -401,37 +417,37 @@ export default function VideoStudio({
                   disabled={busy || refs.length >= 12}
                   onClick={() => openUpload("reference")}
                 >
-                  <Upload size={15} />
-                  Upload
+                  <Upload size={15} /> {t("Upload")}{" "}
                 </button>
                 <button
                   className="secondary"
                   disabled={refs.length >= 12}
                   onClick={() => void openPicker("reference")}
                 >
-                  <Plus size={15} />
-                  Project
+                  <Plus size={15} /> {t("Project")}{" "}
                 </button>
               </div>
               <p className="video-hint">
-                Up to 9 images, 3 videos and 3 audio clips. Media: 2–15 seconds,
-                64 MB each. Combined video and audio: 15 seconds each.
+                {" "}
+                {t(
+                  "Up to 9 images, 3 videos and 3 audio clips. Media: 2–15 seconds, 64 MB each. Combined video and audio: 15 seconds each.",
+                )}{" "}
               </p>
             </div>
           )}
           <div className="video-field">
-            <span>Model</span>
+            <span> {t("Model")} </span>
             <button className="video-model" onClick={() => navigate("/models")}>
               <span className="video-model-mark">H3</span>
               <span>
                 <strong>VDN-H3</strong>
-                <small>Powered by MiniMax H3</small>
+                <small> {t("Powered by MiniMax H3")} </small>
               </span>
               <ChevronDown size={16} />
             </button>
           </div>
           <div className="video-field">
-            <span>Quality</span>
+            <span> {t("Quality")} </span>
             <div className="segmented video-quality">
               {(["light", "medium", "high", "max"] as const).map((q) => (
                 <button
@@ -446,15 +462,17 @@ export default function VideoStudio({
                     })
                   }
                 >
-                  {q[0].toUpperCase() + q.slice(1)}
+                  {" "}
+                  {t(q[0].toUpperCase() + q.slice(1))}{" "}
                 </button>
               ))}
             </div>
           </div>
-          <p className="video-hint">{qualityCopy[form.quality]}</p>
+          <p className="video-hint"> {t(qualityCopy[form.quality])} </p>
           <div className="video-fields-row">
             <label className="video-field">
-              Canvas
+              {" "}
+              {t("Canvas")}{" "}
               <select
                 value={`${form.width}x${form.height}`}
                 onChange={(e) => {
@@ -462,16 +480,17 @@ export default function VideoStudio({
                   setForm({ ...form, width, height });
                 }}
               >
-                <option value="896x512">896 × 512 · Wide</option>
-                <option value="512x896">512 × 896 · Tall</option>
-                <option value="512x512">512 × 512 · Square</option>
-                <option value="1344x768">1344 × 768 · Wide</option>
-                <option value="768x1344">768 × 1344 · Tall</option>
-                <option value="768x768">768 × 768 · Square</option>
+                <option value="896x512"> {t("896 × 512 · Wide")} </option>
+                <option value="512x896"> {t("512 × 896 · Tall")} </option>
+                <option value="512x512"> {t("512 × 512 · Square")} </option>
+                <option value="1344x768"> {t("1344 × 768 · Wide")} </option>
+                <option value="768x1344"> {t("768 × 1344 · Tall")} </option>
+                <option value="768x768"> {t("768 × 768 · Square")} </option>
               </select>
             </label>
             <label className="video-field">
-              Duration
+              {" "}
+              {t("Duration")}{" "}
               <select
                 value={form.seconds}
                 onChange={(e) =>
@@ -480,22 +499,25 @@ export default function VideoStudio({
               >
                 {[2, 3, 5, 8, 10].map((s) => (
                   <option key={s} value={s}>
-                    {s} seconds
+                    {quantity(s, "seconds")}{" "}
                   </option>
                 ))}
               </select>
             </label>
           </div>
           <p className="video-hint">
-            {(alignedFrames / 24).toFixed(2)}s at 24 fps after frame alignment.
-            Stereo sound is generated with every clip.
+            {" "}
+            {number(alignedFrames / 24, 2)}{" "}
+            {t(
+              "s at 24 fps after frame alignment. Stereo sound is generated with every clip.",
+            )}{" "}
           </p>
           <label
             className={`video-toggle ${form.quality !== "light" ? "muted-text" : ""}`}
           >
             <span>
-              <strong>Preview first</strong>
-              <small>Explore at half resolution, finish later.</small>
+              <strong> {t("Preview first")} </strong>
+              <small> {t("Explore at half resolution, finish later.")} </small>
             </span>
             <input
               type="checkbox"
@@ -509,13 +531,13 @@ export default function VideoStudio({
             aria-expanded={advanced}
             onClick={() => setAdvanced(!advanced)}
           >
-            <SlidersHorizontal size={16} />
-            More settings
+            <SlidersHorizontal size={16} /> {t("More settings")}{" "}
             <ChevronDown size={16} />
           </button>
           {advanced && (
             <label className="video-field">
-              Seed
+              {" "}
+              {t("Seed")}{" "}
               <div className="video-seed">
                 <input
                   type="number"
@@ -528,7 +550,7 @@ export default function VideoStudio({
                 />
                 <button
                   className="icon-btn"
-                  aria-label="Randomize seed"
+                  aria-label={t("Randomize seed")}
                   onClick={() =>
                     setForm({
                       ...form,
@@ -543,8 +565,12 @@ export default function VideoStudio({
           )}
           {error && (
             <div className="error-banner" role="alert">
-              {error}
-              <button aria-label="Dismiss error" onClick={() => setError("")}>
+              {" "}
+              {t(error)}{" "}
+              <button
+                aria-label={t("Dismiss error")}
+                onClick={() => setError("")}
+              >
                 <X size={15} />
               </button>
             </div>
@@ -552,12 +578,16 @@ export default function VideoStudio({
           {model?.status !== "installed" ? (
             <div className="video-install">
               <p>
-                {model?.busy
-                  ? model.operation?.phase
-                  : "Install VDN-H3 to start creating video."}
+                {" "}
+                {t(
+                  model?.busy
+                    ? model.operation?.phase
+                    : "Install VDN-H3 to start creating video.",
+                )}{" "}
               </p>
               <button className="secondary" onClick={() => navigate("/models")}>
-                Open model library
+                {" "}
+                {t("Open model library")}{" "}
               </button>
             </div>
           ) : null}
@@ -577,21 +607,25 @@ export default function VideoStudio({
               <LoaderCircle size={18} className="spin" />
             ) : (
               <Film size={18} />
-            )}
-            {form.preview ? "Generate preview" : "Generate video"}
+            )}{" "}
+            {t(form.preview ? "Generate preview" : "Generate video")}{" "}
           </button>
-          <p className="video-local-note">Runs on your GPU · No credits</p>
+          <p className="video-local-note">
+            {" "}
+            {t("Runs on your GPU · No credits")}{" "}
+          </p>
         </section>
-        <section className="video-stage" aria-label="Video preview">
+        <section className="video-stage" aria-label={t("Video preview")}>
           {active.map((job) => (
             <div className="video-job" key={job.id}>
               <p className="video-job-prompt" title={job.request.prompt}>
-                {job.request.mode === "finish" ? "Finishing · " : ""}
+                {" "}
+                {t(job.request.mode === "finish" ? "Finishing · " : "")}{" "}
                 {job.request.prompt}
               </p>
               <div>
                 <LoaderCircle size={16} className="spin" />
-                <strong>{job.phase}</strong>
+                <strong> {t(job.phase)} </strong>
                 <button
                   className="text-link"
                   onClick={() =>
@@ -600,33 +634,38 @@ export default function VideoStudio({
                       .catch((e) => setError(e.message))
                   }
                 >
-                  Cancel
+                  {" "}
+                  {t("Cancel")}{" "}
                 </button>
               </div>
               {job.progress > 0 ? (
                 <progress
                   max={100}
                   value={job.progress}
-                  aria-label="Current render stage progress"
+                  aria-label={t("Current render stage progress")}
                 />
               ) : (
                 <p>
-                  {job.status === "queued"
-                    ? "Waiting for the current GPU job to finish."
-                    : "Preparing this clip. The first render includes kernel compilation."}
+                  {" "}
+                  {t(
+                    job.status === "queued"
+                      ? "Waiting for the current GPU job to finish."
+                      : "Preparing this clip. The first render includes kernel compilation.",
+                  )}{" "}
                 </p>
               )}
             </div>
           ))}
           {failed && (
             <details className="video-job-error">
-              <summary>Latest render needs attention</summary>
-              <p>{failed.error}</p>
+              <summary> {t("Latest render needs attention")} </summary>
+              <p> {t(failed.error)} </p>
               <button
                 className="text-link"
                 onClick={() => navigate("/settings")}
               >
-                View runtime logs
+                {" "}
+                {t("View runtime logs")}{" "}
               </button>
             </details>
           )}
@@ -638,18 +677,21 @@ export default function VideoStudio({
                   <div>
                     <h2>{selected.name}</h2>
                     <p>
-                      {selected.metadata.preview ? "Preview" : "Finished"} ·
-                      VDN-H3 · {duration(selected)} · {selected.width} ×{" "}
-                      {selected.height} · Stereo
+                      {" "}
+                      {t(
+                        selected.metadata.preview ? "Preview" : "Finished",
+                      )}{" "}
+                      {t("· VDN-H3 ·")} {t(duration(selected))} ·{" "}
+                      {selected.width} × {selected.height} {t("· Stereo")}{" "}
                     </p>
                   </div>
                   <button
                     className={`icon-btn ${selected.favorite ? "is-favorite" : ""}`}
-                    aria-label={
+                    aria-label={t(
                       selected.favorite
                         ? "Remove clip from favorites"
-                        : "Favorite clip"
-                    }
+                        : "Favorite clip",
+                    )}
                     onClick={() =>
                       void updateAsset({ favorite: !selected.favorite })
                     }
@@ -662,8 +704,7 @@ export default function VideoStudio({
                 </div>
                 <div className="video-result-actions">
                   <button className="secondary" onClick={() => void reuse()}>
-                    <RefreshCw size={15} />
-                    Use settings
+                    <RefreshCw size={15} /> {t("Use settings")}{" "}
                   </button>
                   {selected.metadata.preview && !selected.deleted ? (
                     <button
@@ -673,28 +714,28 @@ export default function VideoStudio({
                       }
                       onClick={() => void submit(true)}
                     >
-                      Finish preview
+                      {" "}
+                      {t("Finish preview")}{" "}
                     </button>
                   ) : null}
                   <button
                     className="secondary"
                     onClick={() => setDialog("export")}
                   >
-                    <Download size={16} />
-                    Download
+                    <Download size={16} /> {t("Download")}{" "}
                   </button>
                   <button
                     className="icon-btn"
-                    aria-label="Clip details"
+                    aria-label={t("Clip details")}
                     onClick={() => setDialog("details")}
                   >
                     <SlidersHorizontal size={17} />
                   </button>
                   <button
                     className="icon-btn"
-                    aria-label={
-                      selected.deleted ? "Restore clip" : "Move clip to trash"
-                    }
+                    aria-label={t(
+                      selected.deleted ? "Restore clip" : "Move clip to trash",
+                    )}
                     onClick={() =>
                       void updateAsset({ deleted: !selected.deleted })
                     }
@@ -708,17 +749,24 @@ export default function VideoStudio({
                 </div>
                 {selected.metadata.preview ? (
                   <p className="video-hint">
-                    Finish at{" "}
-                    {String(
-                      (selected.metadata.settings as unknown as VideoRequest)
-                        ?.width,
+                    {" "}
+                    {t("Finish at")}{" "}
+                    {t(
+                      String(
+                        (selected.metadata.settings as unknown as VideoRequest)
+                          ?.width,
+                      ),
                     )}{" "}
                     ×{" "}
-                    {String(
-                      (selected.metadata.settings as unknown as VideoRequest)
-                        ?.height,
+                    {t(
+                      String(
+                        (selected.metadata.settings as unknown as VideoRequest)
+                          ?.height,
+                      ),
                     )}{" "}
-                    using the saved first pass. Your preview is kept.
+                    {t(
+                      "using the saved first pass. Your preview is kept.",
+                    )}{" "}
                   </p>
                 ) : null}
               </div>
@@ -728,29 +776,31 @@ export default function VideoStudio({
               <div className="video-empty-symbol">
                 <Film size={35} strokeWidth={1.3} />
               </div>
-              <h2>A little movement changes everything.</h2>
+              <h2> {t("A little movement changes everything.")} </h2>
               <p>
-                Describe a scene and its sound, or start with an image. Your
-                clips will appear here.
+                {" "}
+                {t(
+                  "Describe a scene and its sound, or start with an image. Your clips will appear here.",
+                )}{" "}
               </p>
               <div>
-                <span>01 · Describe</span>
-                <span>02 · Preview</span>
-                <span>03 · Finish</span>
+                <span> {t("01 · Describe")} </span>
+                <span> {t("02 · Preview")} </span>
+                <span> {t("03 · Finish")} </span>
               </div>
             </div>
           )}
         </section>
-        <aside className="video-library" aria-label="Project clips">
+        <aside className="video-library" aria-label={t("Project clips")}>
           <div className="video-library-heading">
-            <h2>Project clips</h2>
+            <h2> {t("Project clips")} </h2>
             <span>{assets.length}</span>
           </div>
           <label className="video-search">
             <Search size={16} />
             <input
-              aria-label="Search clips"
-              placeholder="Search clips"
+              aria-label={t("Search clips")}
+              placeholder={t("Search clips")}
               value={query}
               onChange={(e) => setQuery(e.target.value)}
             />
@@ -760,18 +810,19 @@ export default function VideoStudio({
               className={filter === "all" ? "active" : ""}
               onClick={() => setFilter("all")}
             >
-              All
+              {" "}
+              {t("All")}{" "}
             </button>
             <button
               className={filter === "favorites" ? "active" : ""}
-              aria-label="Favorite clips"
+              aria-label={t("Favorite clips")}
               onClick={() => setFilter("favorites")}
             >
               <Star size={15} />
             </button>
             <button
               className={filter === "trash" ? "active" : ""}
-              aria-label="Trashed clips"
+              aria-label={t("Trashed clips")}
               onClick={() => setFilter("trash")}
             >
               <Trash2 size={15} />
@@ -786,25 +837,29 @@ export default function VideoStudio({
               >
                 <div>
                   <img src={asset.thumbnail_url} alt="" loading="lazy" />
-                  <span>{duration(asset)}</span>
+                  <span> {t(duration(asset))} </span>
                 </div>
                 <strong>{asset.name}</strong>
                 <small>
-                  {asset.metadata.preview ? "Preview" : "Finished"}
-                  {asset.favorite ? " · Favorite" : ""}
+                  {" "}
+                  {t(asset.metadata.preview ? "Preview" : "Finished")}{" "}
+                  {t(asset.favorite ? " · Favorite" : "")}{" "}
                 </small>
               </button>
             ))}
           </div>
           {!assets.length && (
             <p className="video-library-empty">
-              {filter === "trash"
-                ? "Your trash is empty."
-                : query
-                  ? "No matching clips."
-                  : filter === "favorites"
-                    ? "Favorite a clip to find it here."
-                    : "Your project’s clips, all in one place."}
+              {" "}
+              {t(
+                filter === "trash"
+                  ? "Your trash is empty."
+                  : query
+                    ? "No matching clips."
+                    : filter === "favorites"
+                      ? "Favorite a clip to find it here."
+                      : "Your project’s clips, all in one place.",
+              )}{" "}
             </p>
           )}
         </aside>
@@ -817,11 +872,11 @@ export default function VideoStudio({
       />
       {picker && (
         <Modal
-          title={
+          title={t(
             picker === "reference"
               ? "Choose a project reference"
-              : "Choose a project image"
-          }
+              : "Choose a project image",
+          )}
           onClose={() => setPicker(null)}
         >
           <div className="video-image-picker">
@@ -834,25 +889,30 @@ export default function VideoStudio({
           </div>
           {!images.length && (
             <p>
-              No matching assets in this project yet. Upload a reference or
-              create one in the studio.
+              {" "}
+              {t(
+                "No matching assets in this project yet. Upload a reference or create one in the studio.",
+              )}{" "}
             </p>
           )}
           <button className="secondary" onClick={() => openUpload(picker)}>
-            <Upload size={16} />
-            {picker === "reference" ? "Upload reference" : "Upload image"}
+            <Upload size={16} />{" "}
+            {t(
+              picker === "reference" ? "Upload reference" : "Upload image",
+            )}{" "}
           </button>
         </Modal>
       )}
       {dialog === "export" && selected && (
-        <Modal title="Download clip" onClose={() => setDialog(null)}>
+        <Modal title={t("Download clip")} onClose={() => setDialog(null)}>
           <div className="video-downloads">
             <a className="secondary" href={`${selected.url}?download=true`}>
               <Film size={19} />
               <span>
-                <strong>Video with sound</strong>
+                <strong> {t("Video with sound")} </strong>
                 <small>
-                  MP4 · {selected.width} × {selected.height}
+                  {" "}
+                  {t("MP4 ·")} {selected.width} × {selected.height}
                 </small>
               </span>
               <Download size={17} />
@@ -860,8 +920,8 @@ export default function VideoStudio({
             <a className="secondary" href={`/api/videos/${selected.id}/audio`}>
               <AudioLines size={19} />
               <span>
-                <strong>Audio only</strong>
-                <small>WAV · Stereo · 32 kHz</small>
+                <strong> {t("Audio only")} </strong>
+                <small> {t("WAV · Stereo · 32 kHz")} </small>
               </span>
               <Download size={17} />
             </a>
@@ -870,7 +930,7 @@ export default function VideoStudio({
               href={`/api/assets/${selected.id}/thumbnail?download=true`}
             >
               <ImagePlus size={19} />
-              <span>Cover image · PNG</span>
+              <span> {t("Cover image · PNG")} </span>
               <Download size={17} />
             </a>
             <a
@@ -879,16 +939,17 @@ export default function VideoStudio({
               download={`atelier-${selected.id}.json`}
             >
               <SlidersHorizontal size={19} />
-              <span>Generation settings · JSON</span>
+              <span> {t("Generation settings · JSON")} </span>
               <Download size={17} />
             </a>
           </div>
         </Modal>
       )}
       {dialog === "details" && selected && (
-        <Modal title="Clip details" onClose={() => setDialog(null)}>
+        <Modal title={t("Clip details")} onClose={() => setDialog(null)}>
           <label className="video-field">
-            Name
+            {" "}
+            {t("Name")}{" "}
             <input
               defaultValue={selected.name}
               key={selected.id}
@@ -900,7 +961,8 @@ export default function VideoStudio({
             />
           </label>
           <label className="video-field">
-            Project
+            {" "}
+            {t("Project")}{" "}
             <select
               value={selected.project_id}
               onChange={(e) => {
@@ -910,30 +972,35 @@ export default function VideoStudio({
             >
               {snapshot.projects.map((p) => (
                 <option value={p.id} key={p.id}>
-                  {p.name}
+                  {" "}
+                  {projectName(p)}{" "}
                 </option>
               ))}
             </select>
           </label>
           <p className="video-detail-prompt">{selected.prompt}</p>
           <dl className="video-details-list">
-            <dt>Model</dt>
+            <dt> {t("Model")} </dt>
             <dd>VDN-H3 · MiniMax H3</dd>
-            <dt>Seed</dt>
+            <dt> {t("Seed")} </dt>
             <dd>{selected.seed}</dd>
-            <dt>Render time</dt>
+            <dt> {t("Render time")} </dt>
             <dd>
-              {Number(selected.metadata.elapsed_seconds).toFixed(1)} seconds
+              {" "}
+              {t(Number(selected.metadata.elapsed_seconds).toFixed(1))}{" "}
+              {t("seconds")}{" "}
             </dd>
-            <dt>Frames / FPS</dt>
+            <dt> {t("Frames / FPS")} </dt>
             <dd>
-              {String(selected.metadata.frames)} /{" "}
-              {String(selected.metadata.fps)}
+              {" "}
+              {t(String(selected.metadata.frames))} /{" "}
+              {t(String(selected.metadata.fps))}{" "}
             </dd>
-            <dt>Audio</dt>
+            <dt> {t("Audio")} </dt>
             <dd>
-              {String(selected.metadata.channels)} channels ·{" "}
-              {String(selected.metadata.sample_rate)} Hz
+              {" "}
+              {t(String(selected.metadata.channels))} {t("channels ·")}{" "}
+              {t(String(selected.metadata.sample_rate))} {t("Hz")}{" "}
             </dd>
           </dl>
         </Modal>

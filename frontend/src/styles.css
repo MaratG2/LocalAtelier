@@ -1,5 +1,10 @@
 @import url("./tokens.css");
-.project-service-links { display: flex; gap: 18px; margin: 13px 0; font-size: 12px; }
+.project-service-links {
+  display: flex;
+  gap: 18px;
+  margin: 13px 0;
+  font-size: 12px;
+}
 * {
   box-sizing: border-box;
 }
@@ -1259,6 +1264,11 @@ input[type="checkbox"] {
   width: 12px;
   height: 12px;
 }
+.style-controls .check-label,
+.project-style-fields .check-label,
+.game-controls .check-label {
+  color: #435743;
+}
 .rotate {
   transform: rotate(180deg);
 }
@@ -2220,5 +2230,291 @@ input[type="checkbox"] {
     animation: none !important;
     transition: none !important;
     scroll-behavior: auto !important;
+  }
+}
+.language-switch {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 8px 10px;
+}
+.language-switch select {
+  min-width: 0;
+  width: 100%;
+  background: var(--surface, #fff);
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  padding: 8px;
+  color: var(--ink, #24362c);
+}
+.temporary-bar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 18px;
+  padding: 10px 42px;
+  background: #f1f4ee;
+  border-bottom: 1px solid var(--line);
+  color: #415443;
+  font-size: 12px;
+}
+.temporary-bar .quiet {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  white-space: nowrap;
+  font-weight: 600;
+}
+.temporary-bar.enabled {
+  background: #eee8f3;
+  color: #513c64;
+}
+.temporary-bar .error {
+  width: 100%;
+  margin: 0;
+}
+.temporary-results {
+  position: fixed;
+  right: 24px;
+  bottom: 20px;
+  z-index: 50;
+  width: min(470px, calc(100vw - 32px));
+  max-height: 45vh;
+  overflow: auto;
+  padding: 18px;
+  background: #fff;
+  box-shadow: 0 8px 35px #1e2f2529;
+  border-radius: 12px;
+}
+.temporary-results > strong {
+  display: block;
+  margin-bottom: 12px;
+}
+.temporary-results > div {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 8px 0;
+}
+.temporary-results img {
+  width: 40px;
+  height: 40px;
+  object-fit: cover;
+  border-radius: 5px;
+}
+.temporary-results span {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.temporary-results small {
+  display: block;
+  color: #526456;
+  line-height: 1.5;
+  margin-top: 12px;
+}
+.studio-main {
+  display: flex;
+  flex-direction: column;
+}
+.studio-main > .image-page {
+  width: 100%;
+  height: auto;
+  flex: 1;
+  min-height: 0;
+}
+.creative-controls {
+  border-bottom: 1px solid var(--line);
+  padding-bottom: 10px;
+  margin-bottom: 10px;
+}
+.game-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  gap: 10px;
+}
+.game-controls label {
+  display: grid;
+  gap: 5px;
+  font-size: 11px;
+  font-weight: 600;
+}
+.game-controls input[type="number"] {
+  width: 76px;
+}
+.game-controls select,
+.game-controls input[type="number"] {
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 7px;
+  background: white;
+}
+.game-controls > p {
+  flex-basis: 100%;
+  margin: 0;
+  font-size: 11px;
+  color: #526456;
+  max-width: 75ch;
+}
+.game-controls .check-label {
+  display: flex;
+  padding: 7px 0;
+}
+.style-controls {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px 15px;
+  margin-top: 10px;
+  font-size: 11px;
+}
+.style-controls > span {
+  flex: 1;
+  min-width: 140px;
+  max-width: 60ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: #526456;
+}
+.style-controls img {
+  width: 30px;
+  height: 30px;
+  object-fit: cover;
+  border-radius: 4px;
+}
+.project-style-fields {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 16px;
+  display: grid;
+  gap: 14px;
+  min-width: 0;
+}
+.project-style-fields legend {
+  font-weight: 650;
+  padding: 0 6px;
+}
+.project-style-fields p {
+  font-size: 12px;
+  line-height: 1.5;
+  color: #526456;
+  margin: 0;
+}
+.project-style-fields details {
+  display: grid;
+  gap: 10px;
+}
+.project-style-fields summary {
+  margin-bottom: 10px;
+  cursor: pointer;
+}
+.style-reference-preview {
+  display: flex;
+  gap: 15px;
+  align-items: center;
+}
+.style-reference-preview img {
+  width: 90px;
+  height: 90px;
+  object-fit: cover;
+  border-radius: 7px;
+}
+.game-workbench-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 32px;
+  margin: 24px 0;
+}
+.tile-palette,
+.tilemap-grid {
+  display: grid;
+  width: 100%;
+  aspect-ratio: 1;
+  gap: 1px;
+  background: #dbe4db;
+}
+.tile-palette {
+  align-content: start;
+  aspect-ratio: auto;
+}
+.tile-palette button,
+.tilemap-grid button {
+  background-color: #f6f7f1;
+  border: 0;
+  border-radius: 0;
+  padding: 0;
+  aspect-ratio: 1;
+  image-rendering: pixelated;
+}
+.tile-palette button[aria-pressed="true"] {
+  outline: 3px solid #285b3c;
+  outline-offset: -3px;
+}
+.tilemap-grid {
+  grid-template-columns: repeat(12, 1fr);
+}
+.sprite-preview {
+  width: min(100%, 280px);
+  aspect-ratio: 1;
+  image-rendering: pixelated;
+  background-color: #eef1e8;
+  margin-bottom: 16px;
+}
+.game-map-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 16px;
+}
+.game-workbench p {
+  line-height: 1.5;
+  color: #526456;
+  font-size: 13px;
+}
+.settings-section textarea {
+  display: block;
+  width: 100%;
+  margin: 8px 0 16px;
+}
+@media (max-height: 850px) and (min-width: 901px) {
+  .studio-main {
+    height: auto;
+    min-height: 100dvh;
+    overflow: visible;
+  }
+  .studio-main > .image-page {
+    min-height: 850px;
+  }
+  .gallery-scroll {
+    max-height: 45vh;
+  }
+}
+@media (max-width: 900px) {
+  .temporary-bar {
+    padding: 10px 20px;
+  }
+  .studio-main {
+    height: auto;
+    overflow: visible;
+  }
+  .studio-main > .image-page {
+    min-height: calc(100dvh - 150px);
+  }
+  .game-workbench-grid {
+    grid-template-columns: 1fr;
+  }
+  .temporary-results {
+    right: 16px;
+    bottom: 16px;
+  }
+}
+@media (max-width: 900px) {
+  /* The expanded game controls must not cover the gallery on short screens. */
+  .image-page .composer {
+    position: static;
   }
 }

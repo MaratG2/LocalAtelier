@@ -1,3 +1,4 @@
+import { t, projectName } from "./i18n";
 import {
   useCallback,
   useEffect,
@@ -24,9 +25,11 @@ import {
   Trash2,
   X,
 } from "lucide-react";
+import { GameControls, GameWorkbench } from "./GameTools";
+import { ProjectForm } from "./Projects";
 import { api, date, patch, post } from "./api";
 import { Empty, Modal } from "./ui";
-import type { Asset, GenerationRequest, Snapshot } from "./types";
+import type { Asset, GameAsset, GenerationRequest, Snapshot } from "./types";
 
 const ACTIVE = new Set(["queued", "running"]);
 function initialDraft(project: string) {
@@ -67,7 +70,9 @@ export function ImageStudio({
   notify: (s: string) => void;
   refresh: () => Promise<void>;
 }) {
-  const [draft] = useState(() => initialDraft(projectId));
+  const [draft] = useState(() =>
+    snapshot.status?.temporary ? {} : initialDraft(projectId),
+  );
   const [prompt, setPrompt] = useState<string>(draft.prompt || "");
   const [modelId, setModelId] = useState<string>(
     draft.modelId ||
@@ -76,6 +81,13 @@ export function ImageStudio({
       )?.id ||
       "qwen-image-2.1",
   );
+  const project = snapshot.projects.find((p) => p.id === projectId);
+  const [useStyle, setUseStyle] = useState(true);
+  const [useStyleReference, setUseStyleReference] = useState(true);
+  const [gameAsset, setGameAsset] = useState<GameAsset | null>(null);
+  const [workshop, setWorkshop] = useState<Asset | null>(null);
+  const [editProject, setEditProject] = useState(false);
+  const styleReference = useStyleReference ? project?.style_reference_id : null;
   const [mode, setMode] = useState<GenerationRequest["mode"]>("t2i");
   const [ratio, setRatio] = useState<string>(draft.ratio || "1:1");
   const [size, setSize] = useState<number>(draft.size || 1024);
@@ -98,7 +110,9 @@ export function ImageStudio({
   const promptInput = useRef<HTMLTextAreaElement>(null);
   const model = snapshot.models.find((m) => m.id === modelId);
   const jobs = snapshot.jobs.filter(
-    (j) => j.project_id === projectId && j.model_id !== "trellis2",
+    (j) =>
+      j.project_id === projectId &&
+      !["trellis2", "vdn-h3"].includes(j.model_id),
   );
   const active = jobs.filter((j) => ACTIVE.has(j.status));
   const latest = jobs[0];
@@ -127,6 +141,7 @@ export function ImageStudio({
     return () => clearTimeout(timer);
   }, [loadAssets, completedKey]);
   useEffect(() => {
+    if (snapshot.status?.temporary) return;
     localStorage.setItem(
       "atelier.draft." + projectId,
       JSON.stringify({ prompt, modelId, ratio, size, steps, seed }),
@@ -145,6 +160,7 @@ export function ImageStudio({
   };
   const changeMode = (next: GenerationRequest["mode"]) => {
     setMode(next);
+    setUseStyleReference(false);
     if (next === "t2i") setRefs([]);
     if (next === "edit") setRefs((r) => r.slice(0, 1));
     setError("");
@@ -197,6 +213,9 @@ export function ImageStudio({
         model_id: modelId,
         mode,
         prompt,
+        use_style: useStyle,
+        use_style_reference: useStyleReference,
+        game_asset: gameAsset,
         ...shape,
         seed: random ? Math.floor(Math.random() * (4294967295 - batch)) : seed,
         num_inference_steps: steps,
@@ -216,6 +235,7 @@ export function ImageStudio({
   const useImage = (asset: Asset) => {
     setRefs([asset]);
     setMode("edit");
+    setUseStyleReference(false);
     setSelected(null);
     setPrompt("");
     promptInput.current?.focus();
@@ -224,7 +244,10 @@ export function ImageStudio({
   const reuse = async (asset: Asset) => {
     const settings = asset.metadata.settings;
     if (!settings) return;
-    setPrompt(settings.prompt);
+    setPrompt(settings.user_prompt || settings.prompt);
+    setUseStyle(settings.use_style ?? false);
+    setUseStyleReference(false);
+    setGameAsset(settings.game_asset || null);
     setModelId(settings.model_id);
     setSteps(settings.num_inference_steps);
     setSeed(settings.seed);
@@ -252,25 +275,39 @@ export function ImageStudio({
     !prompt.trim() ||
     model?.status !== "installed" ||
     model?.busy ||
-    (mode !== "t2i" && !refs.length) ||
+    (mode !== "t2i" && !refs.length && !styleReference) ||
     active.length >= 4;
   return (
     <div className="image-page">
+      {editProject && (
+        <ProjectForm
+          project={project}
+          onClose={() => setEditProject(false)}
+          onSave={() => {
+            setEditProject(false);
+            void refresh();
+          }}
+        />
+      )}
+      {workshop && (
+        <GameWorkbench asset={workshop} onClose={() => setWorkshop(null)} />
+      )}
       <header className="page-head">
         <div>
-          <h1>Images</h1>
-          <p>Your ideas, rendered here.</p>
+          <h1> {t("Images")} </h1>
+          <p> {t("Your ideas, rendered here.")} </p>
         </div>
         <label className="project-picker">
-          <span className="sr-only">Current project</span>
+          <span className="sr-only"> {t("Current project")} </span>
           <select
-            aria-label="Current project"
+            aria-label={t("Current project")}
             value={projectId}
             onChange={(e) => onProject(e.target.value)}
           >
             {snapshot.projects.map((p) => (
               <option key={p.id} value={p.id}>
-                {p.name}
+                {" "}
+                {projectName(p)}{" "}
               </option>
             ))}
           </select>
@@ -280,8 +317,8 @@ export function ImageStudio({
         <div className="search">
           <Search size={19} />
           <input
-            aria-label="Search images"
-            placeholder="Search images"
+            aria-label={t("Search images")}
+            placeholder={t("Search images")}
             value={query}
             onChange={(e) => setQuery(e.target.value)}
           />
@@ -291,35 +328,35 @@ export function ImageStudio({
             className={filter === "all" ? "active" : ""}
             onClick={() => setFilter("all")}
           >
-            All images
+            {" "}
+            {t("All images")}{" "}
           </button>
           <button
             className={filter === "favorites" ? "active" : ""}
             onClick={() => setFilter("favorites")}
           >
-            <Star size={16} />
-            Favorites
+            <Star size={16} /> {t("Favorites")}{" "}
           </button>
         </div>
         <div className="view-controls">
           <button
             className={`icon-btn ${filter === "trash" ? "selected" : ""}`}
-            title="Trash"
-            aria-label="Show trashed images"
+            title={t("Trash")}
+            aria-label={t("Show trashed images")}
             onClick={() => setFilter(filter === "trash" ? "all" : "trash")}
           >
             <Trash2 size={17} />
           </button>
           <button
             className={`icon-btn ${view === "grid" ? "selected" : ""}`}
-            aria-label="Grid view"
+            aria-label={t("Grid view")}
             onClick={() => setView("grid")}
           >
             <Grid2X2 size={18} />
           </button>
           <button
             className={`icon-btn ${view === "list" ? "selected" : ""}`}
-            aria-label="List view"
+            aria-label={t("List view")}
             onClick={() => setView("list")}
           >
             <List size={20} />
@@ -328,16 +365,16 @@ export function ImageStudio({
       </div>
       <div className="gallery-scroll">
         {active.length ? (
-          <section className="job-list" aria-label="Generation queue">
+          <section className="job-list" aria-label={t("Generation queue")}>
             {active.map((j) => (
               <div className="job-card" key={j.id}>
                 <div>
                   <LoaderCircle size={18} className="spin" />
                   <span>
-                    <strong>{j.phase}</strong>
+                    <strong> {t(j.phase)} </strong>
                     <small>
                       {snapshot.models.find((m) => m.id === j.model_id)?.name} ·{" "}
-                      {j.completed} of {j.total} complete
+                      {j.completed} {t("of")} {j.total} {t("complete")}{" "}
                     </small>
                   </span>
                   <button
@@ -348,7 +385,10 @@ export function ImageStudio({
                         .catch((e) => setError(e.message));
                     }}
                   >
-                    {j.status === "queued" ? "Cancel" : "Stop after image"}
+                    {" "}
+                    {t(
+                      j.status === "queued" ? "Cancel" : "Stop after image",
+                    )}{" "}
                   </button>
                 </div>
                 <div
@@ -360,14 +400,15 @@ export function ImageStudio({
             ))}
           </section>
         ) : null}
-        {latest?.status === "error" ? (
+        {latest?.status === t("error") ? (
           <div className="error-banner job-error" role="alert">
             <div>
-              <strong>Generation did not finish</strong>
-              <p>{latest.error}</p>
+              <strong> {t("Generation did not finish")} </strong>
+              <p> {t(latest.error)} </p>
             </div>
             <button className="text-link" onClick={() => navigate("/settings")}>
-              Diagnostics
+              {" "}
+              {t("Diagnostics")}{" "}
             </button>
           </div>
         ) : null}
@@ -401,7 +442,9 @@ export function ImageStudio({
                     </span>
                     <button
                       className={`icon-btn ${asset.favorite ? "favorited" : ""}`}
-                      aria-label={`${asset.favorite ? "Unfavorite" : "Favorite"} image ${asset.seed}`}
+                      aria-label={t(
+                        `${asset.favorite ? "Unfavorite" : "Favorite"} image ${asset.seed}`,
+                      )}
                       onClick={() =>
                         void updateAsset(asset, { favorite: !asset.favorite })
                       }
@@ -414,7 +457,7 @@ export function ImageStudio({
                     {filter === "trash" ? (
                       <button
                         className="icon-btn"
-                        aria-label={`Restore image ${asset.seed}`}
+                        aria-label={t(`Restore image ${asset.seed}`)}
                         onClick={() =>
                           void updateAsset(asset, { deleted: false })
                         }
@@ -424,7 +467,7 @@ export function ImageStudio({
                     ) : (
                       <a
                         className="icon-btn"
-                        aria-label={`Download image ${asset.seed}`}
+                        aria-label={t(`Download image ${asset.seed}`)}
                         href={asset.url + "?download=true"}
                       >
                         <Download size={16} />
@@ -437,28 +480,29 @@ export function ImageStudio({
           </div>
         ) : active.length ? null : (
           <Empty
-            title={
+            title={t(
               filter === "trash"
                 ? "Your trash is empty"
                 : filter === "favorites"
                   ? "Keep your favorites close"
                   : query
                     ? "No matching images"
-                    : "Your next idea starts here"
-            }
-            description={
+                    : "Your next idea starts here",
+            )}
+            description={t(
               filter === "trash"
                 ? "Images you remove from a project can be restored here."
                 : filter === "favorites"
                   ? "Star an image to find it here."
                   : query
                     ? "Try a different word from your prompt."
-                    : "Describe an image below, or add a reference to start editing."
-            }
+                    : "Describe an image below, or add a reference to start editing.",
+            )}
           >
             {model?.status !== "installed" ? (
               <button className="secondary" onClick={() => navigate("/models")}>
-                Choose a model to install
+                {" "}
+                {t("Choose a model to install")}{" "}
               </button>
             ) : null}
           </Empty>
@@ -473,8 +517,59 @@ export function ImageStudio({
           if (!busy) void upload(Array.from(e.dataTransfer.files));
         }}
       >
+        <div className="creative-controls">
+          <GameControls value={gameAsset} onChange={setGameAsset} />
+          <div className="style-controls">
+            <label className="check-label">
+              <input
+                type="checkbox"
+                checked={useStyle}
+                onChange={(e) => setUseStyle(e.target.checked)}
+              />{" "}
+              {t("Project style")}{" "}
+            </label>
+            {project?.style_reference_id && (
+              <label className="check-label">
+                <input
+                  type="checkbox"
+                  checked={useStyleReference && mode !== "edit"}
+                  disabled={mode === "edit"}
+                  onChange={(e) => setUseStyleReference(e.target.checked)}
+                />{" "}
+                {t("Style reference")}{" "}
+              </label>
+            )}
+            {styleReference && mode !== "edit" && (
+              <img
+                src={`/api/assets/${styleReference}/thumbnail`}
+                alt={t("Project style reference")}
+              />
+            )}
+            <span>
+              {styleReference && mode !== "edit"
+                ? t("References mode will be used")
+                : useStyle
+                  ? project?.style_prompt ||
+                    t("Use project or global art direction")
+                  : t("Style prompt disabled for this image")}
+            </span>
+            <button
+              className="quiet"
+              type="button"
+              disabled={snapshot.status?.temporary}
+              onClick={() => setEditProject(true)}
+            >
+              {" "}
+              {t("Edit style")}{" "}
+            </button>
+          </div>
+        </div>
         <div className="composer-top">
-          <div className="mode-tabs" role="tablist" aria-label="Image task">
+          <div
+            className="mode-tabs"
+            role="tablist"
+            aria-label={t("Image task")}
+          >
             {(
               [
                 { id: "t2i", name: "Create", icon: ImageIcon },
@@ -486,28 +581,40 @@ export function ImageStudio({
                 key={id}
                 type="button"
                 role="tab"
-                aria-selected={mode === id}
-                className={mode === id ? "active" : ""}
+                aria-selected={
+                  (styleReference && mode !== "edit" ? "reference" : mode) ===
+                  id
+                }
+                className={
+                  (styleReference && mode !== "edit" ? "reference" : mode) ===
+                  id
+                    ? "active"
+                    : ""
+                }
                 onClick={() => changeMode(id)}
               >
-                <Icon size={17} />
-                {name}
+                <Icon size={17} /> {t(name)}{" "}
               </button>
             ))}
           </div>
           {active.length ? (
-            <span className="queue-count">{active.length} in queue</span>
+            <span className="queue-count">
+              {active.length} {t("in queue")}{" "}
+            </span>
           ) : null}
         </div>
         {refs.length ? (
           <div className="reference-strip">
             {refs.map((ref, index) => (
               <div key={ref.id}>
-                <img src={ref.thumbnail_url} alt={`Reference ${index + 1}`} />
+                <img
+                  src={ref.thumbnail_url}
+                  alt={t(`Reference ${index + 1}`)}
+                />
                 <span>{index + 1}</span>
                 <button
                   type="button"
-                  aria-label={`Remove reference ${index + 1}`}
+                  aria-label={t(`Remove reference ${index + 1}`)}
                   onClick={() => setRefs(refs.filter((_, i) => i !== index))}
                 >
                   <X size={12} />
@@ -515,26 +622,29 @@ export function ImageStudio({
               </div>
             ))}
             <p>
-              {mode === "reference"
-                ? "Refer to image 1, image 2, and so on in your prompt."
-                : "Describe what you want to change in this image."}
+              {" "}
+              {t(
+                mode === "reference"
+                  ? "Refer to image 1, image 2, and so on in your prompt."
+                  : "Describe what you want to change in this image.",
+              )}{" "}
             </p>
           </div>
         ) : null}
         <textarea
           ref={promptInput}
-          aria-label="Image prompt"
+          aria-label={t("Image prompt")}
           value={prompt}
           onChange={(e) => setPrompt(e.target.value)}
           maxLength={12000}
           rows={2}
-          placeholder={
+          placeholder={t(
             mode === "t2i"
               ? "Describe what you want to create…"
               : mode === "edit"
                 ? "What would you like to change?"
-                : "Describe how to use your reference images…"
-          }
+                : "Describe how to use your reference images…",
+          )}
         />
         <div className="composer-controls">
           <button
@@ -543,14 +653,13 @@ export function ImageStudio({
             onClick={() => uploader.current?.click()}
             disabled={busy}
           >
-            <Plus size={19} />
-            References
+            <Plus size={19} /> {t("References")}{" "}
           </button>
           <input
             ref={uploader}
             type="file"
             className="sr-only"
-            aria-label="Upload reference images"
+            aria-label={t("Upload reference images")}
             accept="image/png,image/jpeg,image/webp"
             multiple
             onChange={(e) => {
@@ -559,9 +668,10 @@ export function ImageStudio({
             }}
           />
           <label className="model-select">
-            Model
+            {" "}
+            {t("Model")}{" "}
             <select
-              aria-label="Image model"
+              aria-label={t("Image model")}
               value={modelId}
               onChange={(e) => changeModel(e.target.value)}
             >
@@ -573,33 +683,35 @@ export function ImageStudio({
                     value={m.id}
                     disabled={m.status !== "installed"}
                   >
-                    {m.name}
-                    {m.status !== "installed" ? " · not installed" : ""}
+                    {m.name}{" "}
+                    {t(m.status !== "installed" ? " · not installed" : "")}{" "}
                   </option>
                 ))}
-              <option value="manage">Manage models…</option>
+              <option value="manage"> {t("Manage models…")} </option>
             </select>
           </label>
           <label>
-            Ratio
+            {" "}
+            {t("Ratio")}{" "}
             <select
-              aria-label="Aspect ratio"
+              aria-label={t("Aspect ratio")}
               value={ratio}
-              disabled={mode !== "t2i" && keepAspect}
+              disabled={!!gameAsset || (mode !== "t2i" && keepAspect)}
               onChange={(e) => setRatio(e.target.value)}
             >
               {["1:1", "4:3", "3:4", "16:9", "9:16"].map((r) => (
-                <option key={r}>{r}</option>
+                <option key={r}> {t(r)} </option>
               ))}
               {!["1:1", "4:3", "3:4", "16:9", "9:16"].includes(ratio) ? (
-                <option>{ratio}</option>
+                <option> {t(ratio)} </option>
               ) : null}
             </select>
           </label>
           <label>
-            Resolution
+            {" "}
+            {t("Resolution")}{" "}
             <select
-              aria-label="Resolution"
+              aria-label={t("Resolution")}
               value={size}
               onChange={(e) => setSize(Number(e.target.value))}
             >
@@ -609,9 +721,10 @@ export function ImageStudio({
             </select>
           </label>
           <label>
-            Steps
+            {" "}
+            {t("Steps")}{" "}
             <input
-              aria-label="Steps"
+              aria-label={t("Steps")}
               type="number"
               min={1}
               max={model?.max_steps || 60}
@@ -620,9 +733,10 @@ export function ImageStudio({
             />
           </label>
           <label>
-            Batch
+            {" "}
+            {t("Batch")}{" "}
             <select
-              aria-label="Batch size"
+              aria-label={t("Batch size")}
               value={batch}
               onChange={(e) => setBatch(Number(e.target.value))}
             >
@@ -637,9 +751,8 @@ export function ImageStudio({
             className="primary generate-button"
             disabled={disableGenerate}
           >
-            {busy ? <LoaderCircle size={18} className="spin" /> : null}
-            {busy ? "Preparing…" : "Generate"}
-            <ArrowRight size={19} />
+            {busy ? <LoaderCircle size={18} className="spin" /> : null}{" "}
+            {t(busy ? "Preparing…" : "Generate")} <ArrowRight size={19} />
           </button>
         </div>
         <div className="composer-foot">
@@ -649,8 +762,8 @@ export function ImageStudio({
             aria-expanded={advanced}
             onClick={() => setAdvanced(!advanced)}
           >
-            <ChevronDown size={15} className={advanced ? "rotate" : ""} />
-            Advanced
+            <ChevronDown size={15} className={advanced ? "rotate" : ""} />{" "}
+            {t("Advanced")}{" "}
           </button>
           {mode !== "t2i" ? (
             <label className="check-label">
@@ -658,34 +771,35 @@ export function ImageStudio({
                 type="checkbox"
                 checked={keepAspect}
                 onChange={(e) => setKeepAspect(e.target.checked)}
-              />
-              Keep reference aspect
+              />{" "}
+              {t("Keep reference aspect")}{" "}
             </label>
           ) : null}
           <label
             className="check-label"
-            title={
+            title={t(
               !model?.transparent
                 ? "Native transparency is available with Qwen-Image-2.1"
-                : undefined
-            }
+                : undefined,
+            )}
           >
             <input
               type="checkbox"
               checked={transparent}
               disabled={!model?.transparent}
               onChange={(e) => setTransparent(e.target.checked)}
-            />
-            Transparent background
+            />{" "}
+            {t("Transparent background")}{" "}
           </label>
         </div>
         {advanced ? (
           <div className="advanced-controls">
             <SlidersHorizontal size={18} />
             <label>
-              Seed
+              {" "}
+              {t("Seed")}{" "}
               <input
-                aria-label="Seed"
+                aria-label={t("Seed")}
                 type="number"
                 min={0}
                 max={4294967295}
@@ -700,23 +814,26 @@ export function ImageStudio({
                 checked={random}
                 onChange={(e) => setRandom(e.target.checked)}
               />
-              <Shuffle size={15} />
-              Random seed
+              <Shuffle size={15} /> {t("Random seed")}{" "}
             </label>
             <p>
-              {modelId === "hidream-o1"
-                ? "HiDream renders at its training scale, then exports at your selected size."
-                : "Start at 1K and 25 steps on a 16 GB GPU."}
+              {" "}
+              {t(
+                modelId === "hidream-o1"
+                  ? "HiDream renders at its training scale, then exports at your selected size."
+                  : "Start at 1K and 25 steps on a 16 GB GPU.",
+              )}{" "}
             </p>
           </div>
         ) : null}
         {error ? (
           <div className="composer-error" role="alert">
-            {error}
+            {" "}
+            {t(error)}{" "}
             <button
               type="button"
               className="icon-btn"
-              aria-label="Dismiss error"
+              aria-label={t("Dismiss error")}
               onClick={() => setError("")}
             >
               <X size={16} />
@@ -725,17 +842,53 @@ export function ImageStudio({
         ) : null}
       </form>
       {selected ? (
-        <Modal title="Image details" wide onClose={() => setSelected(null)}>
+        <Modal
+          title={t("Image details")}
+          wide
+          onClose={() => setSelected(null)}
+        >
           <div className="asset-detail">
             <div className="detail-preview">
               <img src={selected.url} alt={selected.prompt} />
             </div>
             <div className="detail-info">
               <h3>{selected.name}</h3>
+              {!!selected.metadata.game_asset && (
+                <button
+                  className="secondary"
+                  onClick={() => {
+                    setWorkshop(selected);
+                    setSelected(null);
+                  }}
+                >
+                  {" "}
+                  {t("Open game asset workshop")}{" "}
+                </button>
+              )}
+              {!snapshot.status?.temporary && (
+                <button
+                  className="secondary"
+                  onClick={async () => {
+                    try {
+                      await patch(`/projects/${projectId}`, {
+                        style_reference_id: selected.id,
+                      });
+                      setUseStyleReference(true);
+                      setSelected(null);
+                      notify("Project style reference updated");
+                    } catch (e) {
+                      setError((e as Error).message);
+                    }
+                  }}
+                >
+                  {" "}
+                  {t("Use as project style reference")}{" "}
+                </button>
+              )}
               <p>{selected.prompt}</p>
               <dl className="detail-list">
                 <div>
-                  <dt>Model</dt>
+                  <dt> {t("Model")} </dt>
                   <dd>
                     {
                       snapshot.models.find((m) => m.id === selected.model_id)
@@ -744,28 +897,31 @@ export function ImageStudio({
                   </dd>
                 </div>
                 <div>
-                  <dt>Size</dt>
+                  <dt> {t("Size")} </dt>
                   <dd>
                     {selected.width} × {selected.height}
                   </dd>
                 </div>
                 <div>
-                  <dt>Seed</dt>
+                  <dt> {t("Seed")} </dt>
                   <dd>{selected.seed}</dd>
                 </div>
                 <div>
-                  <dt>Created</dt>
-                  <dd>{date(selected.created)}</dd>
+                  <dt> {t("Created")} </dt>
+                  <dd> {t(date(selected.created))} </dd>
                 </div>
                 {selected.metadata.elapsed_seconds ? (
                   <div>
-                    <dt>Generation time</dt>
-                    <dd>{selected.metadata.elapsed_seconds}s</dd>
+                    <dt> {t("Generation time")} </dt>
+                    <dd>
+                      {selected.metadata.elapsed_seconds} {t("s")}{" "}
+                    </dd>
                   </div>
                 ) : null}
               </dl>
               <label>
-                Project
+                {" "}
+                {t("Project")}{" "}
                 <select
                   value={selected.project_id}
                   onChange={(e) =>
@@ -774,37 +930,46 @@ export function ImageStudio({
                 >
                   {snapshot.projects.map((p) => (
                     <option key={p.id} value={p.id}>
-                      {p.name}
+                      {" "}
+                      {projectName(p)}{" "}
                     </option>
                   ))}
                 </select>
               </label>
               <div className="detail-actions">
                 <a className="primary" href={selected.url + "?download=true"}>
-                  <Download size={16} />
-                  Download PNG
+                  <Download size={16} /> {t("Download PNG")}{" "}
                 </a>
                 <button
                   className="secondary"
                   onClick={() => useImage(selected)}
                   disabled={!!selected.deleted}
                 >
-                  <Pencil size={16} />
-                  Edit this image
+                  <Pencil size={16} /> {t("Edit this image")}{" "}
                 </button>
                 {!selected.deleted && (
                   <>
                     <a
                       className="secondary"
                       href={`/3d?project=${selected.project_id}&image=${selected.id}`}
+                      onClick={(event) => {
+                        event.preventDefault();
+                        navigate(event.currentTarget.getAttribute("href")!);
+                      }}
                     >
-                      Create a 3D object
+                      {" "}
+                      {t("Create a 3D object")}{" "}
                     </a>
                     <a
                       className="secondary"
                       href={`/video?project=${selected.project_id}&image=${selected.id}`}
+                      onClick={(event) => {
+                        event.preventDefault();
+                        navigate(event.currentTarget.getAttribute("href")!);
+                      }}
                     >
-                      Animate image
+                      {" "}
+                      {t("Animate image")}{" "}
                     </a>
                   </>
                 )}
@@ -813,15 +978,15 @@ export function ImageStudio({
                   onClick={() => void reuse(selected)}
                   disabled={!selected.metadata.settings || !!selected.deleted}
                 >
-                  <RotateCcw size={16} />
-                  Reuse settings
+                  <RotateCcw size={16} /> {t("Reuse settings")}{" "}
                 </button>
                 <a
                   className="quiet"
                   href={`/api/assets/${selected.id}/metadata`}
                   download={`atelier-${selected.seed}.json`}
                 >
-                  Download metadata
+                  {" "}
+                  {t("Download metadata")}{" "}
                 </a>
                 <button
                   className="quiet danger"
@@ -845,7 +1010,7 @@ export function ImageStudio({
                   ) : (
                     <Trash2 size={16} />
                   )}{" "}
-                  {selected.deleted ? "Restore image" : "Move to trash"}
+                  {t(selected.deleted ? "Restore image" : "Move to trash")}{" "}
                 </button>
               </div>
             </div>

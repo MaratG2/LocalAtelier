@@ -1,4 +1,12 @@
-import { lazy, Suspense, useCallback, useEffect, useState } from "react";
+import { t, projectName, LanguageSwitch, useLanguage } from "./i18n";
+import {
+  lazy,
+  Suspense,
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
 import {
   Home as HomeIcon,
   Image as ImageIcon,
@@ -13,6 +21,7 @@ import {
   X,
   Star,
 } from "lucide-react";
+import { TemporaryMode } from "./TemporaryMode";
 import { api } from "./api";
 import { Brand, Loading } from "./ui";
 import { Home } from "./Home";
@@ -25,6 +34,7 @@ const MeshStudio = lazy(() => import("./MeshStudio"));
 const VideoStudio = lazy(() => import("./VideoStudio"));
 
 export default function App() {
+  useLanguage();
   const [route, setRoute] = useState(location.pathname);
   const [projectId, setProjectId] = useState(
     new URLSearchParams(location.search).get("project") ||
@@ -41,7 +51,9 @@ export default function App() {
   const [newProject, setNewProject] = useState(false);
   const [mobileNav, setMobileNav] = useState(false);
   const [notice, setNotice] = useState("");
+  const loadVersion = useRef(0);
   const load = useCallback(async () => {
+    const version = ++loadVersion.current;
     try {
       const [projects, models, jobs, status] = await Promise.all([
         api<Project[]>("/projects"),
@@ -49,9 +61,11 @@ export default function App() {
         api<Job[]>("/jobs"),
         api<Status>("/status"),
       ]);
+      if (version !== loadVersion.current) return;
       setSnapshot({ projects, models, jobs, status });
       setError("");
     } catch (e) {
+      if (version !== loadVersion.current) return;
       setError(
         e instanceof Error ? e.message : "Cannot connect to Local Atelier",
       );
@@ -88,14 +102,15 @@ export default function App() {
     return () => clearTimeout(timer);
   }, [notice]);
   const navigate = (path: string, project?: string) => {
-    const next = project
-      ? `${path}?project=${encodeURIComponent(project)}`
-      : path;
-    history.pushState(null, "", next);
-    setRoute(path);
-    if (project) {
-      setProjectId(project);
-      localStorage.setItem("atelier.project", project);
+    const destination = new URL(path, location.origin);
+    if (project) destination.searchParams.set("project", project);
+    const selectedProject = destination.searchParams.get("project");
+    history.pushState(null, "", destination.pathname + destination.search);
+    setRoute(destination.pathname);
+    if (selectedProject) {
+      setProjectId(selectedProject);
+      if (!snapshot.status?.temporary)
+        localStorage.setItem("atelier.project", selectedProject);
     }
     setMobileNav(false);
   };
@@ -103,7 +118,8 @@ export default function App() {
     snapshot.projects.find((p) => p.id === projectId)?.id || "inbox";
   const pickProject = (id: string) => {
     setProjectId(id);
-    localStorage.setItem("atelier.project", id);
+    if (!snapshot.status?.temporary)
+      localStorage.setItem("atelier.project", id);
     history.replaceState(null, "", `${route}?project=${id}`);
   };
   const notify = (message: string) => {
@@ -125,7 +141,7 @@ export default function App() {
         <Brand />
         <button
           className="icon-btn"
-          aria-label="Toggle navigation"
+          aria-label={t("Toggle navigation")}
           onClick={() => setMobileNav(!mobileNav)}
         >
           {mobileNav ? <X /> : <Menu />}
@@ -134,7 +150,7 @@ export default function App() {
       {mobileNav ? (
         <button
           className="nav-scrim"
-          aria-label="Close navigation"
+          aria-label={t("Close navigation")}
           onClick={() => setMobileNav(false)}
         />
       ) : null}
@@ -148,7 +164,7 @@ export default function App() {
         >
           <Brand />
         </a>
-        <nav aria-label="Main navigation">
+        <nav aria-label={t("Main navigation")}>
           {nav.map(({ path, label, icon: Icon }) => (
             <a
               key={path}
@@ -160,13 +176,12 @@ export default function App() {
                 navigate(path);
               }}
             >
-              <Icon size={21} strokeWidth={1.7} />
-              {label}
+              <Icon size={21} strokeWidth={1.7} /> {t(label)}{" "}
             </a>
           ))}
         </nav>
         <div className="nav-section">
-          <span className="section-label">Future tools</span>
+          <span className="section-label"> {t("Future tools")} </span>
           {[[AudioLines, "Audio"]].map(([Icon, label]) => {
             const I = Icon as typeof Box;
             return (
@@ -181,39 +196,45 @@ export default function App() {
                 }}
               >
                 <I size={21} strokeWidth={1.7} />
-                <span>{String(label)}</span>
-                <small>Later</small>
+                <span> {t(String(label))} </span>
+                <small> {t("Later")} </small>
               </button>
             );
           })}
         </div>
         {snapshot.projects.some((p) => p.favorite) ? (
           <div className="nav-section favorites-nav">
-            <span className="section-label">Pinned projects</span>
+            <span className="section-label"> {t("Pinned projects")} </span>
             {snapshot.projects
               .filter((p) => p.favorite)
               .slice(0, 4)
               .map((p) => (
                 <button key={p.id} onClick={() => navigate("/images", p.id)}>
                   <Star size={15} />
-                  <span>{p.name}</span>
+                  <span> {projectName(p)} </span>
                 </button>
               ))}
           </div>
         ) : null}
         <div className="sidebar-foot">
+          <LanguageSwitch />
           <div
             className="gpu-small"
-            title={gpu?.gpu_name || "No NVIDIA GPU detected"}
+            title={t(gpu?.gpu_name || "No NVIDIA GPU detected")}
           >
             <Monitor size={18} />
             <span>
-              {gpu?.gpu_name
-                ? gpu.gpu_name.replace("NVIDIA GeForce ", "")
-                : "GPU not detected"}
-              {gpu?.gpu_total_mib
-                ? ` · ${Math.round(gpu.gpu_total_mib / 1024)} GB`
-                : ""}
+              {" "}
+              {t(
+                gpu?.gpu_name
+                  ? gpu.gpu_name.replace("NVIDIA GeForce ", "")
+                  : "GPU not detected",
+              )}{" "}
+              {t(
+                gpu?.gpu_total_mib
+                  ? ` · ${Math.round(gpu.gpu_total_mib / 1024)} GB`
+                  : "",
+              )}{" "}
             </span>
             <i className={gpu?.gpu_name ? "online" : ""} />
           </div>
@@ -225,16 +246,23 @@ export default function App() {
               navigate("/settings");
             }}
           >
-            <SettingsIcon size={21} strokeWidth={1.7} />
-            Settings
+            <SettingsIcon size={21} strokeWidth={1.7} /> {t("Settings")}{" "}
           </a>
         </div>
       </aside>
       <main className={`main ${route === "/images" ? "studio-main" : ""}`}>
+        <TemporaryMode snapshot={snapshot} changed={load} />
+        {snapshot.status?.cleanup_error && (
+          <p className="error-banner" role="alert">
+            {" "}
+            {t(snapshot.status.cleanup_error)}{" "}
+          </p>
+        )}
         {error ? (
           <div className="error-banner" role="alert">
-            {error}
-            <button onClick={() => void load()}>Retry</button>
+            {" "}
+            {t(error)}{" "}
+            <button onClick={() => void load()}> {t("Retry")} </button>
           </div>
         ) : null}
         {!snapshot.status && !error ? (
@@ -255,7 +283,7 @@ export default function App() {
           />
         ) : route === "/images" ? (
           <ImageStudio
-            key={currentProject}
+            key={currentProject + String(snapshot.status?.temporary)}
             snapshot={snapshot}
             projectId={currentProject}
             onProject={pickProject}
@@ -266,7 +294,7 @@ export default function App() {
         ) : route === "/3d" ? (
           <Suspense fallback={<Loading />}>
             <MeshStudio
-              key={currentProject}
+              key={currentProject + String(snapshot.status?.temporary)}
               snapshot={snapshot}
               projectId={currentProject}
               onProject={pickProject}
@@ -278,7 +306,7 @@ export default function App() {
         ) : route === "/video" ? (
           <Suspense fallback={<Loading />}>
             <VideoStudio
-              key={currentProject}
+              key={currentProject + String(snapshot.status?.temporary)}
               snapshot={snapshot}
               projectId={currentProject}
               onProject={pickProject}
@@ -293,18 +321,20 @@ export default function App() {
           <Settings snapshot={snapshot} refresh={load} notify={notify} />
         ) : (
           <div className="empty">
-            <h1>Page not found</h1>
+            <h1> {t("Page not found")} </h1>
             <button className="primary" onClick={() => navigate("/")}>
-              Back to home
+              {" "}
+              {t("Back to home")}{" "}
             </button>
           </div>
         )}
       </main>
       {notice ? (
         <div className="toast" role="status">
-          {notice}
+          {" "}
+          {t(notice)}{" "}
           <button
-            aria-label="Dismiss notification"
+            aria-label={t("Dismiss notification")}
             onClick={() => setNotice("")}
           >
             <X size={16} />
@@ -316,6 +346,14 @@ export default function App() {
           onClose={() => setNewProject(false)}
           onSave={(p) => {
             setNewProject(false);
+            ++loadVersion.current;
+            setSnapshot((previous) => ({
+              ...previous,
+              projects: [
+                p,
+                ...previous.projects.filter((item) => item.id !== p.id),
+              ],
+            }));
             notify("Project created");
             navigate("/images", p.id);
           }}

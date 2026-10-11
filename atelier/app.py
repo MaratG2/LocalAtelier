@@ -4,9 +4,10 @@ import os
 import shutil
 import subprocess
 import time
+import threading
 from pathlib import Path
 
-from flask import Flask, jsonify, request, send_from_directory, send_file
+from flask import Flask, g, jsonify, request, send_from_directory, send_file
 from PIL import Image, ImageOps, UnidentifiedImageError
 from werkzeug.exceptions import HTTPException
 
@@ -15,6 +16,8 @@ from .generation import GenerationQueue, save_image
 from .models import CREATE_FLAGS, ModelManager
 from .runtime import Runtime
 from .storage import Store, identifier, now
+from .privacy import SessionRouter
+from .styles import project_style
 
 
 def object_body():
@@ -32,7 +35,7 @@ def text_field(value, name, limit, empty=False):
 
 def create_app(data_root=None, project_root=None, runtime_factory=Runtime):
     root = Path(project_root or Path(__file__).resolve().parents[1])
-    store = Store(data_root or root / "data")
+    store = SessionRouter(Store(data_root or root / "data"))
     runtime = runtime_factory(store)
     models = ModelManager(store, root, runtime)
     jobs = GenerationQueue(store, runtime, models)
@@ -40,13 +43,62 @@ def create_app(data_root=None, project_root=None, runtime_factory=Runtime):
     app.config.update(MAX_CONTENT_LENGTH=66 * 1024 * 1024, TRUSTED_HOSTS=["localhost", "127.0.0.1", "[::1]"])
     app.extensions.update(store=store, runtime=runtime, models=models, jobs=jobs)
     hardware = {"at": 0, "value": {}}
+    threading.Thread(target=store.expire, args=(jobs,), daemon=True).start()
 
     @app.before_request
     def origin_guard():
+        key = request.cookies.get('atelier_temporary')
+        session = store.sessions.get(key)
+        g.session_context = store.context.set(key if session and not session.closed else None)
+        if session and not session.closed:
+            session.touched = time.monotonic()
+        g.expired_session = bool(key and (not session or session.closed))
+        if g.expired_session and request.method not in {'GET', 'HEAD'} and request.path.startswith('/api/') and not request.path.startswith('/api/temporary'):
+            return jsonify(error='Temporary session ended. Reload the studio.'), 410
         if request.path.startswith("/api/") and request.method not in {"GET", "HEAD", "OPTIONS"}:
             origin = request.headers.get("Origin")
             if origin and origin not in {request.host_url.rstrip("/"), "http://127.0.0.1:5175", "http://localhost:5175"}:
                 return jsonify(error="Cross-origin requests are not allowed"), 403
+            if store.temporary and (request.path.startswith('/api/projects') or request.path.startswith('/api/models') or request.path == '/api/settings'):
+                raise ValueError('End temporary mode before changing projects, models or settings')
+
+    @app.teardown_request
+    def reset_session(error):
+        if hasattr(g, 'session_context'):
+            store.context.reset(g.session_context)
+
+    @app.after_request
+    def private_response(response):
+        if getattr(g, 'expired_session', False):
+            response.delete_cookie('atelier_temporary')
+        if request.path.startswith('/api/'):
+            response.headers['Cache-Control'] = 'no-store'
+            response.headers['Vary'] = 'Cookie'
+        return response
+
+    @app.route('/api/temporary', methods=['GET', 'POST', 'DELETE'])
+    def temporary_session():
+        if request.method == 'POST':
+            key = request.cookies.get('atelier_temporary')
+            if key in store.sessions and not store.sessions[key].closed:
+                return jsonify(temporary=True)
+            key = store.begin()
+            response = jsonify(temporary=True)
+            response.set_cookie('atelier_temporary', key, httponly=True, samesite='Strict')
+            return response
+        if request.method == 'DELETE':
+            store.close(request.cookies.get('atelier_temporary'), jobs)
+            response = jsonify(temporary=False, cleanup_error=store.cleanup_error)
+            response.delete_cookie('atelier_temporary')
+            return response
+        return jsonify(temporary=store.temporary, cleanup_error=store.cleanup_error)
+
+    @app.post('/api/temporary/close')
+    def temporary_close():
+        store.close(request.cookies.get('atelier_temporary'), jobs)
+        response = jsonify(ok=True)
+        response.delete_cookie('atelier_temporary')
+        return response
 
     @app.errorhandler(ValueError)
     def invalid(error):
@@ -67,7 +119,7 @@ def create_app(data_root=None, project_root=None, runtime_factory=Runtime):
             except (OSError, ValueError, IndexError, subprocess.TimeoutExpired):
                 pass
             hardware.update(at=time.monotonic(), value=value)
-        return jsonify(name="Local Atelier", version="0.3.0", hardware=hardware["value"], active_model=runtime.active_model,
+        return jsonify(name="Local Atelier", version="0.4.0", temporary=store.temporary, cleanup_error=store.cleanup_error, hardware=hardware["value"], active_model=runtime.active_model,
                        runtime_phase=runtime.phase, services=SERVICES, data_path=str(store.root))
 
     @app.route("/api/projects", methods=["GET", "POST"])
@@ -77,8 +129,11 @@ def create_app(data_root=None, project_root=None, runtime_factory=Runtime):
         data = object_body()
         name = text_field(data.get("name"), "Project name", 80)
         description = text_field(data.get("description", ""), "Description", 1000, empty=True)
+        values = project_style(data, store)
         project_id = identifier()
         store.execute("INSERT INTO projects(id,name,description,created,updated) VALUES(?,?,?,?,?)", (project_id, name, description, now(), now()))
+        if values:
+            store.execute(f"UPDATE projects SET {','.join(key+'=?' for key in values)} WHERE id=?", (*values.values(), project_id))
         return jsonify(store.project(project_id)), 201
 
     @app.patch("/api/projects/<project_id>")
@@ -87,8 +142,10 @@ def create_app(data_root=None, project_root=None, runtime_factory=Runtime):
         if not project:
             return jsonify(error="Project not found"), 404
         data = object_body()
-        values = {}
+        values = project_style(data, store)
         for key in data:
+            if key in {'style_prompt', 'style_reference_id', 'inherit_style'}:
+                continue
             if key == "name":
                 values[key] = text_field(data[key], "Project name", 80)
             elif key == "description":
@@ -161,7 +218,20 @@ def create_app(data_root=None, project_root=None, runtime_factory=Runtime):
             return jsonify({**asset["metadata"], "prompt": asset["prompt"], "model_id": asset["model_id"]})
         filename = asset["thumbnail"] if variant == "thumbnail" else asset["filename"]
         extension = Path(filename).suffix.lstrip('.')
-        return send_from_directory(store.assets, filename, as_attachment=request.args.get("download") == "true", download_name=f"atelier-{asset['seed'] or asset_id[:8]}.{extension}", max_age=86400)
+        return send_file(store.assets / filename, as_attachment=request.args.get("download") == "true", download_name=f"atelier-{asset['seed'] or asset_id[:8]}.{extension}", max_age=0)
+
+    @app.route('/api/assets/<asset_id>/game-export', methods=['GET', 'POST'])
+    def game_export(asset_id):
+        from .gamedev import export_bundle
+        asset = store.asset(asset_id)
+        if not asset or asset['deleted']:
+            return jsonify(error='Image not found'), 404
+        layout = object_body().get('layout') if request.method == 'POST' else None
+        bundle, atlas = export_bundle(store, asset, layout)
+        if request.args.get('preview') == 'true':
+            data = io.BytesIO(); atlas.save(data, 'PNG'); data.seek(0)
+            return send_file(data, mimetype='image/png')
+        return send_file(io.BytesIO(bundle), mimetype='application/zip', as_attachment=True, download_name='atelier-game-assets.zip')
 
     @app.post('/api/videos/jobs')
     def video_jobs():
@@ -272,6 +342,8 @@ def create_app(data_root=None, project_root=None, runtime_factory=Runtime):
         if not store.asset(asset_id):
             return jsonify(error="Image not found"), 404
         data = object_body()
+        if store.temporary and not store.current.one('SELECT id FROM assets WHERE id=?', (asset_id,)):
+            raise ValueError('Saved assets cannot be changed in temporary mode')
         values = {}
         for key, value in data.items():
             if key in {"favorite", "deleted"} and isinstance(value, bool):
@@ -320,14 +392,18 @@ def create_app(data_root=None, project_root=None, runtime_factory=Runtime):
     def settings():
         if request.method == "PATCH":
             data = object_body()
-            if set(data) - {"low_vram", "unload_after_job"} or any(not isinstance(v, bool) for v in data.values()):
+            if set(data) - {"low_vram", "unload_after_job", "style_prompt"} or any(not isinstance(v, bool) for k, v in data.items() if k != 'style_prompt'):
                 raise ValueError("Unsupported runtime setting")
-            if store.one("SELECT id FROM jobs WHERE status IN ('queued','running') LIMIT 1"):
+            if 'style_prompt' in data:
+                data['style_prompt'] = text_field(data['style_prompt'], 'Style prompt', 4000, empty=True)
+            runtime_change = bool(set(data) - {'style_prompt'})
+            if runtime_change and store.one("SELECT id FROM jobs WHERE status IN ('queued','running') LIMIT 1"):
                 raise ValueError("Wait for queued generations before changing runtime settings")
-            runtime.release()
+            if runtime_change:
+                runtime.release()
             for key, value in data.items():
                 store.set_setting(key, value)
-        return jsonify(low_vram=store.setting("low_vram", False), unload_after_job=store.setting("unload_after_job", False))
+        return jsonify(low_vram=store.setting("low_vram", False), unload_after_job=store.setting("unload_after_job", False), style_prompt=store.setting('style_prompt', ''))
 
     @app.post("/api/runtime/release")
     def release():

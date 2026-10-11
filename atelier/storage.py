@@ -3,6 +3,7 @@ import json
 import sqlite3
 import time
 import uuid
+import threading
 from pathlib import Path
 
 
@@ -15,8 +16,12 @@ def now():
 
 
 class Store:
-    def __init__(self, root):
+    def __init__(self, root, memory=False):
         self.root = Path(root).resolve()
+        self.memory = memory
+        self.db_lock = threading.RLock()
+        self.database = f"file:atelier-{identifier()}?mode=memory&cache=shared" if memory else str(self.root / "atelier.sqlite3")
+        self.anchor = sqlite3.connect(self.database, uri=memory, check_same_thread=False) if memory else None
         self.root.mkdir(parents=True, exist_ok=True)
         self.assets = self.root / "assets"
         self.assets.mkdir(exist_ok=True)
@@ -44,14 +49,22 @@ class Store:
                     verified REAL, verification TEXT, linked REAL NOT NULL);
                 CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
             ''')
+            columns = {row[1] for row in db.execute('PRAGMA table_info(projects)')}
+            for name, definition in {'style_prompt': "TEXT NOT NULL DEFAULT ''", 'style_reference_id': 'TEXT', 'inherit_style': 'INTEGER NOT NULL DEFAULT 1'}.items():
+                if name not in columns:
+                    db.execute(f'ALTER TABLE projects ADD COLUMN {name} {definition}')
             db.execute("INSERT OR IGNORE INTO projects(id,name,created,updated) VALUES('inbox','My creations',?,?)", (now(), now()))
             db.execute("UPDATE jobs SET status='interrupted', phase='Interrupted',error='The studio restarted before this job finished.', updated=? WHERE status IN ('queued','running')", (now(),))
 
     @contextlib.contextmanager
     def connect(self):
-        db = sqlite3.connect(self.root / "atelier.sqlite3", timeout=30)
+        if self.memory:
+            self.db_lock.acquire()
+        db = sqlite3.connect(self.database, timeout=30, uri=self.memory)
         db.row_factory = sqlite3.Row
         db.execute("PRAGMA foreign_keys=ON")
+        if self.memory:
+            db.execute("PRAGMA temp_store=MEMORY")
         try:
             yield db
             db.commit()
@@ -60,6 +73,8 @@ class Store:
             raise
         finally:
             db.close()
+            if self.memory:
+                self.db_lock.release()
 
     def all(self, sql, params=()):
         with self.connect() as db:
