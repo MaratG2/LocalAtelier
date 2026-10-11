@@ -120,7 +120,7 @@ def create_app(data_root=None, project_root=None, runtime_factory=Runtime):
                 pass
             hardware.update(at=time.monotonic(), value=value)
         return jsonify(name="Local Atelier", version="0.4.0", temporary=store.temporary, cleanup_error=store.cleanup_error, hardware=hardware["value"], active_model=runtime.active_model,
-                       runtime_phase=runtime.phase, services=SERVICES, data_path=str(store.root))
+                       runtime_phase=runtime.phase, services=SERVICES, data_path=str(store.root), features=['image-pixelation'])
 
     @app.route("/api/projects", methods=["GET", "POST"])
     def projects_route():

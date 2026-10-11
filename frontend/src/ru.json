@@ -780,5 +780,17 @@
   "Style: Reference": "Стиль: референс",
   "Style: Auto": "Стиль: авто",
   "Style: Off": "Стиль: выкл.",
-  "Close settings": "Закрыть настройки"
+  "Close settings": "Закрыть настройки",
+  "Pixel": "Пиксели",
+  "Pixel finish": "Пикселизация",
+  "Pixel size": "Размер пикселя",
+  "Colors": "Цвета",
+  "{0} px": "{0} пкс",
+  "Pixelate the result after generation. Adjust pixel size and colors in Advanced.": "Пикселизация результата после генерации. Размер пикселя и число цветов — в дополнительных настройках.",
+  "Larger pixels simplify detail. Fewer colors reduce shading. Transparency uses hard edges.": "Крупные пиксели упрощают детали. Меньше цветов — меньше оттенков. Прозрачность без полупрозрачных краёв.",
+  "Applying pixel finish": "Пикселизация изображения",
+  "Pixel settings must contain only pixel size and colors": "Настройки пикселизации могут содержать только размер пикселя и число цветов",
+  "Pixel size must be 2, 4, 8, 16 or 32": "Размер пикселя должен быть 2, 4, 8, 16 или 32",
+  "Pixel colors must be a whole number between 2 and 256": "Число цветов должно быть целым от 2 до 256",
+  "Restart Local Atelier to use Pixel, then try again.": "Перезапустите Local Atelier, чтобы включить пикселизацию, и повторите попытку."
 }

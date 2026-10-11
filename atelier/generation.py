@@ -3,9 +3,11 @@ import queue
 import threading
 from pathlib import Path
 
+from PIL import Image
 from PIL.PngImagePlugin import PngInfo
 
 from .catalog import CATALOG
+from .pixelation import pixelate, validate_pixelation
 from .storage import identifier, now
 
 
@@ -22,6 +24,7 @@ def validate(data, store):
     from .gamedev import validate_tool, tool_prompt
     data, style = apply_style(data, store)
     tool = validate_tool(data.pop('game_asset', None))
+    pixelation = validate_pixelation(data.pop('pixelation', None))
     allowed = {"project_id", "model_id", "mode", "prompt", "width", "height", "seed", "num_inference_steps", "batch_size", "reference_ids", "keep_original_aspect", "transparent_background"}
     if set(data) - allowed:
         raise ValueError("Unsupported generation settings")
@@ -75,6 +78,8 @@ def validate(data, store):
     if mode == "t2i" and request["keep_original_aspect"]:
         raise ValueError("Aspect preservation requires a reference")
     request.update(style)
+    if pixelation:
+        request['pixelation'] = pixelation
     if tool:
         request['game_asset'] = tool
         request['prompt'] += '\n\n' + tool_prompt(tool)
@@ -90,7 +95,10 @@ def save_image(store, image, project_id, *, kind, name, prompt="", model_id=None
     info.add_text("local_atelier", json.dumps({**metadata, "prompt": prompt, "model_id": model_id}))
     image.save(store.assets / filename, format="PNG", pnginfo=info)
     small = image.copy()
-    small.thumbnail((512, 512))
+    if metadata.get('pixelation'):
+        small.thumbnail((512, 512), resample=Image.Resampling.NEAREST)
+    else:
+        small.thumbnail((512, 512))
     small.save(store.assets / thumbnail, format="PNG")
     (store.assets / (asset_id + ".json")).write_text(json.dumps({**metadata, "prompt": prompt, "model_id": model_id}, indent=2), encoding="utf-8")
     store.execute("INSERT INTO assets(id,project_id,kind,filename,thumbnail,name,prompt,model_id,width,height,seed,metadata,created) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)",
@@ -192,6 +200,9 @@ class GenerationQueue:
                             self.store.update_job(job_id, phase=phase, progress=round((index * 100 + value) / request["batch_size"]))
                     seed = request["seed"] + index
                     image, metadata = self.runtime.generate({**request, "seed": seed}, refs, progress)
+                    if request.get('pixelation'):
+                        progress('Applying pixel finish', 99)
+                        image, metadata['pixelation'] = pixelate(image, request['pixelation'])
                     metadata.update(reference_ids=request["reference_ids"], settings={**request, "seed": seed}, job_id=job_id, game_asset=request.get('game_asset'), style_prompt=request.get('style_prompt'), style_reference_id=request.get('style_reference_id'))
                     user_prompt = request.get('user_prompt', request['prompt'])
                     asset = save_image(self.store, image, request["project_id"], kind="generated", name=user_prompt[:80],

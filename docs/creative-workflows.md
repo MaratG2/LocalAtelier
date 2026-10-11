@@ -32,6 +32,18 @@ Open **Style** beside the image tool selector to access independent **Project st
 
 Style controls apply to Images. They do not silently alter TRELLIS or H3 prompts. Reuse settings preserves the original user prompt without appending style or grid instructions a second time. Style consistency is guidance, not an identity lock or a guarantee of identical poses and colors.
 
+## Pixel finishing
+
+Enable **Pixel** beside **Transparent background** in Images to process the generated result on the CPU. It works with either image model, Create / Edit / References, batches and game tools. The switch is off by default. Enabling it opens Advanced; collapsing Advanced keeps the switch and settings active.
+
+If the running backend predates Pixel support, attempting to generate with Pixel shows a restart message without queueing a job. Restart Local Atelier to load the updated backend, then try again.
+
+Advanced → **Pixel finish** sets the output block size (2, 4, 8, 16 or 32 px) and maximum palette size (presets of 8, 16, 32, 64, 128 or 256 colors). Defaults are 8 px and 32 colors, giving a 128×128 logical grid for a 1024×1024 output. The API accepts any integer palette limit from 2 through 256; Reuse settings preserves custom limits and adds them to the selector. Each cell is area-averaged, colors are reduced without dithering, then enlarged with nearest-neighbor sampling. Output dimensions stay unchanged; any partial edge cells are cropped. Bigger blocks simplify more detail. This enforces a pixel grid and palette, but cannot fix incorrect shapes, missing details, poses or tile seams.
+
+Native transparency is retained with a hard silhouette: average alpha below 128 becomes transparent, and alpha at or above 128 becomes opaque. Semi-transparent materials therefore become opaque or transparent. Pixel finishing does not remove an opaque background; request native transparency separately when needed.
+
+The finished PNG is the generated asset; a separate unprocessed copy is not added to the library. Uploaded references remain unchanged. Thumbnails use nearest-neighbor sampling. PNG metadata, the JSON sidecar and Reuse settings retain pixel settings; the regular project draft remembers them as well. Incognito keeps the same temporary lifecycle and does not write these draft settings to browser storage. Game workshop export has its own cell size and palette controls and can further reduce an already pixel-finished image.
+
 ## Game development tools
 
 Images → **Image tool** offers Default image, Character sprite sheet, and Tileset & tile map. Select a 1–8 column/row grid, 16–256 px export cell, frame rate, pixel-art mode and palette size. Grid aspect ratios are limited to 4:1 so the model's supported 512–2048 canvas can use square source cells. The requested resolution is adjusted to a compatible grid and multiples of 64. Square source cells avoid stretching during export.

@@ -47,6 +47,7 @@ export interface Model {
   operation: Operation | null;
 }
 export interface GenerationRequest {
+  pixelation?: { block_size: number; colors: number };
   use_style?: boolean;
   use_style_reference?: boolean;
   user_prompt?: string;
@@ -145,6 +146,7 @@ export interface MeshTexture {
   height: number;
 }
 export interface Status {
+  features?: string[];
   temporary: boolean;
   cleanup_error?: string;
   name: string;

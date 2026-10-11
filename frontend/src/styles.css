@@ -1259,8 +1259,56 @@ input[type="checkbox"] {
   font-weight: 400;
   cursor: pointer;
 }
-.composer-foot > .check-label:last-child {
+.composer-output-options {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 16px;
   margin-left: auto;
+}
+.composer-output-options .check-label {
+  color: #435743;
+  min-height: 28px;
+}
+.pixel-settings {
+  flex-basis: 100%;
+  min-width: 0;
+  border: 0;
+  padding: 8px 0 0;
+  margin: 0;
+  color: #435743;
+}
+.pixel-preview {
+  image-rendering: pixelated;
+}
+.pixel-settings legend {
+  font-size: 11px;
+  font-weight: 600;
+}
+.pixel-settings-controls {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px 20px;
+}
+.pixel-settings-controls label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 11px;
+}
+.pixel-settings-controls select {
+  min-height: 32px;
+  padding: 4px 8px;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  background: #fff;
+  color: inherit;
+}
+.pixel-settings-controls p {
+  margin: 0;
+  max-width: 65ch;
+  line-height: 1.5;
 }
 .check-label input {
   width: 12px;
@@ -2120,7 +2168,7 @@ input[type="checkbox"] {
     gap: 8px;
     margin-top: 10px;
   }
-  .composer-foot .check-label:last-child {
+  .composer-output-options {
     margin-left: 0;
   }
   .composer-foot > .check-label {

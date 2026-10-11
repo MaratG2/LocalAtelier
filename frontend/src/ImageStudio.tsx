@@ -103,6 +103,17 @@ export function ImageStudio({
   const [random, setRandom] = useState(true);
   const [keepAspect, setKeepAspect] = useState(true);
   const [transparent, setTransparent] = useState(false);
+  const [pixel, setPixel] = useState(draft.pixel === true);
+  const [pixelSize, setPixelSize] = useState<number>(
+    [2, 4, 8, 16, 32].includes(draft.pixelSize) ? draft.pixelSize : 8,
+  );
+  const [pixelColors, setPixelColors] = useState<number>(
+    Number.isInteger(draft.pixelColors) &&
+      draft.pixelColors >= 2 &&
+      draft.pixelColors <= 256
+      ? draft.pixelColors
+      : 32,
+  );
   const [refs, setRefs] = useState<Asset[]>([]);
   const [assets, setAssets] = useState<Asset[]>([]);
   const [query, setQuery] = useState("");
@@ -150,9 +161,31 @@ export function ImageStudio({
     if (snapshot.status?.temporary) return;
     localStorage.setItem(
       "atelier.draft." + projectId,
-      JSON.stringify({ prompt, modelId, ratio, size, steps, seed }),
+      JSON.stringify({
+        prompt,
+        modelId,
+        ratio,
+        size,
+        steps,
+        seed,
+        pixel,
+        pixelSize,
+        pixelColors,
+      }),
     );
-  }, [projectId, prompt, modelId, ratio, size, steps, seed]);
+  }, [
+    projectId,
+    prompt,
+    modelId,
+    ratio,
+    size,
+    steps,
+    seed,
+    pixel,
+    pixelSize,
+    pixelColors,
+    snapshot.status?.temporary,
+  ]);
   const changeModel = (id: string) => {
     if (id === "manage") {
       navigate("/models");
@@ -213,6 +246,9 @@ export function ImageStudio({
     setBusy(true);
     setError("");
     try {
+      if (pixel && !snapshot.status?.features?.includes("image-pixelation")) {
+        throw new Error("Restart Local Atelier to use Pixel, then try again.");
+      }
       const shape = dimensions(ratio, size);
       await post("/jobs", {
         project_id: projectId,
@@ -229,6 +265,9 @@ export function ImageStudio({
         reference_ids: mode === "t2i" ? [] : refs.map((r) => r.id),
         keep_original_aspect: mode !== "t2i" && keepAspect,
         transparent_background: transparent,
+        ...(pixel
+          ? { pixelation: { block_size: pixelSize, colors: pixelColors } }
+          : {}),
       });
       await refresh();
       notify("Added to the generation queue");
@@ -265,6 +304,9 @@ export function ImageStudio({
     setMode(settings.mode);
     setKeepAspect(settings.keep_original_aspect);
     setTransparent(settings.transparent_background);
+    setPixel(!!settings.pixelation);
+    setPixelSize(settings.pixelation?.block_size ?? 8);
+    setPixelColors(settings.pixelation?.colors ?? 32);
     try {
       setRefs(
         await Promise.all(
@@ -431,6 +473,9 @@ export function ImageStudio({
                   onClick={() => setSelected(asset)}
                 >
                   <img
+                    className={
+                      asset.metadata.pixelation ? "pixel-preview" : undefined
+                    }
                     src={asset.thumbnail_url}
                     alt={asset.prompt}
                     loading="lazy"
@@ -851,6 +896,7 @@ export function ImageStudio({
             type="button"
             className="quiet"
             aria-expanded={advanced}
+            aria-controls="image-advanced-settings"
             onClick={() => setAdvanced(!advanced)}
           >
             <ChevronDown size={15} className={advanced ? "rotate" : ""} />{" "}
@@ -866,25 +912,43 @@ export function ImageStudio({
               {t("Keep reference aspect")}{" "}
             </label>
           ) : null}
-          <label
-            className="check-label"
-            title={t(
-              !model?.transparent
-                ? "Native transparency is available with Qwen-Image-2.1"
-                : undefined,
-            )}
-          >
-            <input
-              type="checkbox"
-              checked={transparent}
-              disabled={!model?.transparent}
-              onChange={(e) => setTransparent(e.target.checked)}
-            />{" "}
-            {t("Transparent background")}{" "}
-          </label>
+          <div className="composer-output-options">
+            <label
+              className="check-label"
+              title={t(
+                !model?.transparent
+                  ? "Native transparency is available with Qwen-Image-2.1"
+                  : undefined,
+              )}
+            >
+              <input
+                type="checkbox"
+                checked={transparent}
+                disabled={!model?.transparent}
+                onChange={(e) => setTransparent(e.target.checked)}
+              />{" "}
+              {t("Transparent background")}{" "}
+            </label>
+            <label
+              className="check-label"
+              title={t(
+                "Pixelate the result after generation. Adjust pixel size and colors in Advanced.",
+              )}
+            >
+              <input
+                type="checkbox"
+                checked={pixel}
+                onChange={(e) => {
+                  setPixel(e.target.checked);
+                  if (e.target.checked) setAdvanced(true);
+                }}
+              />
+              {t("Pixel")}
+            </label>
+          </div>
         </div>
         {advanced ? (
-          <div className="advanced-controls">
+          <div className="advanced-controls" id="image-advanced-settings">
             <SlidersHorizontal size={18} />
             <label>
               {" "}
@@ -915,6 +979,48 @@ export function ImageStudio({
                   : "Start at 1K and 25 steps on a 16 GB GPU.",
               )}{" "}
             </p>
+            {pixel && (
+              <fieldset className="pixel-settings">
+                <legend>{t("Pixel finish")}</legend>
+                <div className="pixel-settings-controls">
+                  <label>
+                    {t("Pixel size")}
+                    <select
+                      aria-label={t("Pixel size")}
+                      value={pixelSize}
+                      onChange={(e) => setPixelSize(Number(e.target.value))}
+                    >
+                      {[2, 4, 8, 16, 32].map((value) => (
+                        <option key={value} value={value}>
+                          {t("{0} px", value)}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label>
+                    {t("Colors")}
+                    <select
+                      aria-label={t("Colors")}
+                      value={pixelColors}
+                      onChange={(e) => setPixelColors(Number(e.target.value))}
+                    >
+                      {[...new Set([8, 16, 32, 64, 128, 256, pixelColors])]
+                        .sort((a, b) => a - b)
+                        .map((value) => (
+                          <option key={value} value={value}>
+                            {value}
+                          </option>
+                        ))}
+                    </select>
+                  </label>
+                  <p>
+                    {t(
+                      "Larger pixels simplify detail. Fewer colors reduce shading. Transparency uses hard edges.",
+                    )}
+                  </p>
+                </div>
+              </fieldset>
+            )}
           </div>
         ) : null}
         {error ? (
@@ -940,7 +1046,13 @@ export function ImageStudio({
         >
           <div className="asset-detail">
             <div className="detail-preview">
-              <img src={selected.url} alt={selected.prompt} />
+              <img
+                className={
+                  selected.metadata.pixelation ? "pixel-preview" : undefined
+                }
+                src={selected.url}
+                alt={selected.prompt}
+              />
             </div>
             <div className="detail-info">
               <h3>{selected.name}</h3>
