@@ -26,7 +26,13 @@ import {
   Trash2,
   X,
 } from "lucide-react";
-import { GameControls, GameToolSelect, GameWorkbench } from "./GameTools";
+import {
+  GameControls,
+  GameToolSelect,
+  GameWorkbench,
+  normalizeGameAsset,
+  presetName,
+} from "./GameTools";
 import { ProjectForm } from "./Projects";
 import { api, date, patch, post } from "./api";
 import { Empty, Modal } from "./ui";
@@ -85,24 +91,24 @@ export function ImageStudio({
   const project = snapshot.projects.find((p) => p.id === projectId);
   const [useStyle, setUseStyle] = useState(true);
   const [useStyleReference, setUseStyleReference] = useState(true);
-  const [gameAsset, setGameAsset] = useState<GameAsset | null>(null);
+  const [gameAsset, setGameAsset] = useState<GameAsset | null>(() =>
+    draft.gameAsset ? normalizeGameAsset(draft.gameAsset) : null,
+  );
   const [workshop, setWorkshop] = useState<Asset | null>(null);
   const [editProject, setEditProject] = useState(false);
   const [settingsPanel, setSettingsPanel] = useState<"style" | "game" | null>(
     null,
   );
-  const styleTrigger = useRef<HTMLButtonElement>(null);
-  const gameTrigger = useRef<HTMLButtonElement>(null);
   const styleReference = useStyleReference ? project?.style_reference_id : null;
   const [mode, setMode] = useState<GenerationRequest["mode"]>("t2i");
   const [ratio, setRatio] = useState<string>(draft.ratio || "1:1");
   const [size, setSize] = useState<number>(draft.size || 1024);
   const [steps, setSteps] = useState<number>(draft.steps || 25);
-  const [batch, setBatch] = useState(1);
+  const [batch, setBatch] = useState(draft.batch || 1);
   const [seed, setSeed] = useState<number>(draft.seed ?? 42);
   const [random, setRandom] = useState(true);
   const [keepAspect, setKeepAspect] = useState(true);
-  const [transparent, setTransparent] = useState(false);
+  const [transparent, setTransparent] = useState(draft.transparent === true);
   const [pixel, setPixel] = useState(draft.pixel === true);
   const [pixelSize, setPixelSize] = useState<number>(
     [2, 4, 8, 16, 32].includes(draft.pixelSize) ? draft.pixelSize : 8,
@@ -171,6 +177,9 @@ export function ImageStudio({
         pixel,
         pixelSize,
         pixelColors,
+        gameAsset,
+        batch,
+        transparent,
       }),
     );
   }, [
@@ -184,6 +193,9 @@ export function ImageStudio({
     pixel,
     pixelSize,
     pixelColors,
+    gameAsset,
+    batch,
+    transparent,
     snapshot.status?.temporary,
   ]);
   const changeModel = (id: string) => {
@@ -249,7 +261,7 @@ export function ImageStudio({
       if (pixel && !snapshot.status?.features?.includes("image-pixelation")) {
         throw new Error("Restart Local Atelier to use Pixel, then try again.");
       }
-      const shape = dimensions(ratio, size);
+      const shape = dimensions(gameAsset ? "1:1" : ratio, size);
       await post("/jobs", {
         project_id: projectId,
         model_id: modelId,
@@ -257,14 +269,18 @@ export function ImageStudio({
         prompt,
         use_style: useStyle,
         use_style_reference: useStyleReference,
-        game_asset: gameAsset,
+        game_asset: gameAsset ? normalizeGameAsset(gameAsset) : null,
         ...shape,
-        seed: random ? Math.floor(Math.random() * (4294967295 - batch)) : seed,
+        seed: random
+          ? Math.floor(Math.random() * (4294967295 - batch * 8))
+          : seed,
         num_inference_steps: steps,
         batch_size: batch,
         reference_ids: mode === "t2i" ? [] : refs.map((r) => r.id),
-        keep_original_aspect: mode !== "t2i" && keepAspect,
-        transparent_background: transparent,
+        keep_original_aspect: !gameAsset && mode !== "t2i" && keepAspect,
+        transparent_background: gameAsset
+          ? gameAsset.kind === "spritesheet"
+          : transparent,
         ...(pixel
           ? { pixelation: { block_size: pixelSize, colors: pixelColors } }
           : {}),
@@ -278,6 +294,7 @@ export function ImageStudio({
     }
   };
   const useImage = (asset: Asset) => {
+    setGameAsset(null);
     setRefs([asset]);
     setMode("edit");
     setUseStyleReference(false);
@@ -292,7 +309,9 @@ export function ImageStudio({
     setPrompt(settings.user_prompt || settings.prompt);
     setUseStyle(settings.use_style ?? false);
     setUseStyleReference(false);
-    setGameAsset(settings.game_asset || null);
+    setGameAsset(
+      settings.game_asset ? normalizeGameAsset(settings.game_asset) : null,
+    );
     if (!settings.game_asset)
       setSettingsPanel((panel) => (panel === "game" ? null : panel));
     setModelId(settings.model_id);
@@ -320,11 +339,26 @@ export function ImageStudio({
     setSelected(null);
     promptInput.current?.focus();
   };
+  const normalizedTool = gameAsset ? normalizeGameAsset(gameAsset) : null;
+  const gameIssue =
+    gameAsset?.kind === "spritesheet" && modelId !== "qwen-image-2.1"
+      ? "Character sheets use Qwen with automatic transparency."
+      : normalizedTool?.action === "custom" &&
+          (!normalizedTool.count ||
+            normalizedTool.count > 8 ||
+            normalizedTool.custom_frames?.some((line) => line.length > 800))
+        ? "Choose 1–8 custom frames, up to 800 characters each."
+        : "";
   const disableGenerate =
     busy ||
     !prompt.trim() ||
     model?.status !== "installed" ||
     model?.busy ||
+    !!gameIssue ||
+    (gameAsset?.kind === "spritesheet" && modelId !== "qwen-image-2.1") ||
+    (gameAsset?.action === "custom" &&
+      (!normalizeGameAsset(gameAsset).count ||
+        normalizeGameAsset(gameAsset).count! > 8)) ||
     (mode !== "t2i" && !refs.length && !styleReference) ||
     active.length >= 4;
   return (
@@ -340,7 +374,36 @@ export function ImageStudio({
         />
       )}
       {workshop && (
-        <GameWorkbench asset={workshop} onClose={() => setWorkshop(null)} />
+        <GameWorkbench
+          asset={workshop}
+          onClose={() => setWorkshop(null)}
+          onUseFrame={(reference) => {
+            setRefs([reference]);
+            setMode("reference");
+            setUseStyleReference(false);
+            setPrompt(
+              workshop.metadata.settings?.user_prompt || workshop.prompt,
+            );
+            setGameAsset(
+              normalizeGameAsset(workshop.metadata.game_asset as GameAsset),
+            );
+            setModelId("qwen-image-2.1");
+            setSteps(workshop.metadata.settings?.num_inference_steps || 25);
+            setSize(workshop.metadata.settings?.width || 1024);
+            setBatch(1);
+            setUseStyle(workshop.metadata.settings?.use_style ?? true);
+            setPixel(!!workshop.metadata.settings?.pixelation);
+            setPixelSize(
+              workshop.metadata.settings?.pixelation?.block_size ?? 8,
+            );
+            setPixelColors(
+              workshop.metadata.settings?.pixelation?.colors ?? 32,
+            );
+            setWorkshop(null);
+            setSettingsPanel("game");
+            notify("Character reference added. Choose the next animation.");
+          }}
+        />
       )}
       <header className="page-head">
         <div>
@@ -450,7 +513,7 @@ export function ImageStudio({
             ))}
           </section>
         ) : null}
-        {latest?.status === t("error") ? (
+        {latest?.status === "error" ? (
           <div className="error-banner job-error" role="alert">
             <div>
               <strong> {t("Generation did not finish")} </strong>
@@ -469,7 +532,7 @@ export function ImageStudio({
             {assets.map((asset) => (
               <article className="asset-card" key={asset.id}>
                 <button
-                  className="asset-image"
+                  className={`asset-image${asset.metadata.game_asset ? " game-atlas-image" : ""}`}
                   onClick={() => setSelected(asset)}
                 >
                   <img
@@ -564,16 +627,6 @@ export function ImageStudio({
       <form
         className="composer"
         onSubmit={generate}
-        onKeyDown={(event) => {
-          if (event.key === "Escape" && settingsPanel) {
-            event.preventDefault();
-            (settingsPanel === "style"
-              ? styleTrigger
-              : gameTrigger
-            ).current?.focus();
-            setSettingsPanel(null);
-          }
-        }}
         onDragOver={(e) => e.preventDefault()}
         onDrop={(e) => {
           e.preventDefault();
@@ -618,32 +671,35 @@ export function ImageStudio({
               value={gameAsset}
               onChange={(value) => {
                 setGameAsset(value);
+                if (value?.kind === "spritesheet") {
+                  setModelId("qwen-image-2.1");
+                  setSteps(25);
+                }
                 setSettingsPanel(value ? "game" : null);
               }}
             />
             {gameAsset && (
               <button
-                ref={gameTrigger}
                 type="button"
                 className="composer-option"
                 aria-label={t("Game asset settings")}
                 aria-expanded={settingsPanel === "game"}
-                aria-controls="game-options"
+                aria-haspopup="dialog"
                 onClick={() =>
                   setSettingsPanel(settingsPanel === "game" ? null : "game")
                 }
               >
-                <Grid2X2 size={15} /> {gameAsset.columns} × {gameAsset.rows}
+                {t(presetName(gameAsset.action))} ·{" "}
+                {normalizeGameAsset(gameAsset).count}
                 <ChevronDown size={13} />
               </button>
             )}
             <button
-              ref={styleTrigger}
               type="button"
               className="composer-option"
               aria-label={t("Style settings")}
               aria-expanded={settingsPanel === "style"}
-              aria-controls="style-options"
+              aria-haspopup="dialog"
               onClick={() =>
                 setSettingsPanel(settingsPanel === "style" ? null : "style")
               }
@@ -669,76 +725,6 @@ export function ImageStudio({
             ) : null}
           </div>
         </div>
-        {settingsPanel && (
-          <div
-            className="composer-options-panel"
-            id={settingsPanel === "style" ? "style-options" : "game-options"}
-            role="region"
-            aria-label={t(
-              settingsPanel === "style"
-                ? "Style settings"
-                : "Game asset settings",
-            )}
-          >
-            {settingsPanel === "game" && gameAsset ? (
-              <GameControls value={gameAsset} onChange={setGameAsset} />
-            ) : settingsPanel === "style" ? (
-              <div className="style-controls">
-                <div className="style-toggles">
-                  <label className="check-label">
-                    <input
-                      type="checkbox"
-                      checked={useStyle}
-                      onChange={(e) => setUseStyle(e.target.checked)}
-                    />
-                    {t("Project style")}
-                  </label>
-                  {project?.style_reference_id && (
-                    <label className="check-label">
-                      <input
-                        type="checkbox"
-                        checked={useStyleReference && mode !== "edit"}
-                        disabled={mode === "edit"}
-                        onChange={(e) => setUseStyleReference(e.target.checked)}
-                      />
-                      {t("Style reference")}
-                    </label>
-                  )}
-                </div>
-                <p>
-                  {styleReference && mode !== "edit"
-                    ? t("References mode will be used")
-                    : useStyle
-                      ? project?.style_prompt ||
-                        t("Use project or global art direction")
-                      : t("Style prompt disabled for this image")}
-                </p>
-                <button
-                  className="quiet"
-                  type="button"
-                  disabled={snapshot.status?.temporary}
-                  onClick={() => setEditProject(true)}
-                >
-                  <Pencil size={14} /> {t("Edit style")}
-                </button>
-              </div>
-            ) : null}
-            <button
-              type="button"
-              className="icon-btn panel-close"
-              aria-label={t("Close settings")}
-              onClick={() => {
-                (settingsPanel === "style"
-                  ? styleTrigger
-                  : gameTrigger
-                ).current?.focus();
-                setSettingsPanel(null);
-              }}
-            >
-              <X size={16} />
-            </button>
-          </div>
-        )}
         {refs.length ? (
           <div className="reference-strip">
             {refs.map((ref, index) => (
@@ -831,7 +817,7 @@ export function ImageStudio({
             {t("Ratio")}{" "}
             <select
               aria-label={t("Aspect ratio")}
-              value={ratio}
+              value={gameAsset ? "1:1" : ratio}
               disabled={!!gameAsset || (mode !== "t2i" && keepAspect)}
               onChange={(e) => setRatio(e.target.value)}
             >
@@ -845,12 +831,13 @@ export function ImageStudio({
           </label>
           <label>
             {" "}
-            {t("Resolution")}{" "}
+            {t(gameAsset ? "Frame resolution" : "Resolution")}{" "}
             <select
-              aria-label={t("Resolution")}
+              aria-label={t(gameAsset ? "Frame resolution" : "Resolution")}
               value={size}
               onChange={(e) => setSize(Number(e.target.value))}
             >
+              {size === 512 && <option value={512}>512</option>}
               <option value={1024}>1K</option>
               <option value={1536}>1.5K</option>
               <option value={2048}>2K</option>
@@ -896,22 +883,19 @@ export function ImageStudio({
             type="button"
             className="quiet"
             aria-expanded={advanced}
-            aria-controls="image-advanced-settings"
+            aria-haspopup="dialog"
             onClick={() => setAdvanced(!advanced)}
           >
-            <ChevronDown size={15} className={advanced ? "rotate" : ""} />{" "}
-            {t("Advanced")}{" "}
+            <SlidersHorizontal size={15} /> {t("Advanced")}{" "}
           </button>
-          {mode !== "t2i" ? (
-            <label className="check-label">
-              <input
-                type="checkbox"
-                checked={keepAspect}
-                onChange={(e) => setKeepAspect(e.target.checked)}
-              />{" "}
-              {t("Keep reference aspect")}{" "}
-            </label>
-          ) : null}
+          {gameAsset && (
+            <span className="render-count">
+              {t(
+                "{0} frames · generated individually",
+                normalizeGameAsset(gameAsset).count! * batch,
+              )}
+            </span>
+          )}
           <div className="composer-output-options">
             <label
               className="check-label"
@@ -923,8 +907,10 @@ export function ImageStudio({
             >
               <input
                 type="checkbox"
-                checked={transparent}
-                disabled={!model?.transparent}
+                checked={
+                  gameAsset ? gameAsset.kind === "spritesheet" : transparent
+                }
+                disabled={!!gameAsset || !model?.transparent}
                 onChange={(e) => setTransparent(e.target.checked)}
               />{" "}
               {t("Transparent background")}{" "}
@@ -940,16 +926,105 @@ export function ImageStudio({
                 checked={pixel}
                 onChange={(e) => {
                   setPixel(e.target.checked);
-                  if (e.target.checked) setAdvanced(true);
                 }}
               />
               {t("Pixel")}
             </label>
           </div>
         </div>
-        {advanced ? (
-          <div className="advanced-controls" id="image-advanced-settings">
-            <SlidersHorizontal size={18} />
+        {gameIssue && (
+          <p className="composer-error" role="status">
+            {t(gameIssue)}
+          </p>
+        )}
+        {error ? (
+          <div className="composer-error" role="alert">
+            {" "}
+            {t(error)}{" "}
+            <button
+              type="button"
+              className="icon-btn"
+              aria-label={t("Dismiss error")}
+              onClick={() => setError("")}
+            >
+              <X size={16} />
+            </button>
+          </div>
+        ) : null}
+      </form>
+      {settingsPanel && (
+        <Modal
+          title={t(
+            settingsPanel === "game" ? "Game asset settings" : "Style settings",
+          )}
+          wide={settingsPanel === "game"}
+          onClose={() => setSettingsPanel(null)}
+        >
+          <div className="dialog-body settings-dialog">
+            {settingsPanel === "game" && gameAsset ? (
+              <GameControls value={gameAsset} onChange={setGameAsset} />
+            ) : (
+              <div className="style-controls">
+                <div className="style-toggles">
+                  <label className="check-label">
+                    <input
+                      type="checkbox"
+                      checked={useStyle}
+                      onChange={(e) => setUseStyle(e.target.checked)}
+                    />
+                    {t("Project style")}
+                  </label>
+                  {project?.style_reference_id && (
+                    <label className="check-label">
+                      <input
+                        type="checkbox"
+                        checked={useStyleReference && mode !== "edit"}
+                        disabled={mode === "edit"}
+                        onChange={(e) => setUseStyleReference(e.target.checked)}
+                      />
+                      {t("Style reference")}
+                    </label>
+                  )}
+                </div>
+                <p>
+                  {styleReference && mode !== "edit"
+                    ? t("References mode will be used")
+                    : useStyle
+                      ? project?.style_prompt ||
+                        t("Use project or global art direction")
+                      : t("Style prompt disabled for this image")}
+                </p>
+                <button
+                  className="quiet"
+                  type="button"
+                  disabled={snapshot.status?.temporary}
+                  onClick={() => {
+                    setSettingsPanel(null);
+                    setEditProject(true);
+                  }}
+                >
+                  <Pencil size={14} /> {t("Edit style")}
+                </button>
+              </div>
+            )}
+            <div className="dialog-actions">
+              <button
+                type="button"
+                className="primary"
+                onClick={() => setSettingsPanel(null)}
+              >
+                {t("Done")}
+              </button>
+            </div>
+          </div>
+        </Modal>
+      )}
+      {advanced ? (
+        <Modal
+          title={t("Advanced image settings")}
+          onClose={() => setAdvanced(false)}
+        >
+          <div className="dialog-body settings-dialog advanced-dialog">
             <label>
               {" "}
               {t("Seed")}{" "}
@@ -979,6 +1054,16 @@ export function ImageStudio({
                   : "Start at 1K and 25 steps on a 16 GB GPU.",
               )}{" "}
             </p>
+            {!gameAsset && mode !== "t2i" ? (
+              <label className="check-label">
+                <input
+                  type="checkbox"
+                  checked={keepAspect}
+                  onChange={(e) => setKeepAspect(e.target.checked)}
+                />{" "}
+                {t("Keep reference aspect")}{" "}
+              </label>
+            ) : null}
             {pixel && (
               <fieldset className="pixel-settings">
                 <legend>{t("Pixel finish")}</legend>
@@ -1021,23 +1106,18 @@ export function ImageStudio({
                 </div>
               </fieldset>
             )}
+            <div className="dialog-actions">
+              <button
+                type="button"
+                className="primary"
+                onClick={() => setAdvanced(false)}
+              >
+                {t("Done")}
+              </button>
+            </div>
           </div>
-        ) : null}
-        {error ? (
-          <div className="composer-error" role="alert">
-            {" "}
-            {t(error)}{" "}
-            <button
-              type="button"
-              className="icon-btn"
-              aria-label={t("Dismiss error")}
-              onClick={() => setError("")}
-            >
-              <X size={16} />
-            </button>
-          </div>
-        ) : null}
-      </form>
+        </Modal>
+      ) : null}
       {selected ? (
         <Modal
           title={t("Image details")}

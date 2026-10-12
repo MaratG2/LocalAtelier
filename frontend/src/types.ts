@@ -167,8 +167,14 @@ export interface GameAsset {
   rows: number;
   cell_size: number;
   fps: number;
-  pixel_art: boolean;
-  palette: number;
+  pixel_art?: boolean;
+  palette?: number;
+  generation?: "sheet" | "individual";
+  count?: number;
+  action?: "idle" | "walk" | "attack" | "views" | "custom" | "variations";
+  direction?: "front" | "right" | "back" | "left";
+  custom_frames?: string[];
+  seamless?: boolean;
 }
 export interface Snapshot {
   projects: Project[];

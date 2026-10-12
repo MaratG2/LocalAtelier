@@ -1,5 +1,6 @@
 import { t } from "./i18n";
-import { useEffect, useRef, type ReactNode } from "react";
+import { useEffect, useId, useRef, type ReactNode } from "react";
+import { createPortal } from "react-dom";
 import { X, LoaderCircle, FolderPlus, ArrowUpRight } from "lucide-react";
 
 export function Modal({
@@ -14,13 +15,20 @@ export function Modal({
   wide?: boolean;
 }) {
   const ref = useRef<HTMLDialogElement>(null);
+  const titleId = useId();
   useEffect(() => {
-    ref.current?.showModal();
-    return () => ref.current?.close();
+    const dialog = ref.current;
+    const trigger = document.activeElement as HTMLElement | null;
+    dialog?.showModal();
+    return () => {
+      dialog?.close();
+      if (trigger?.isConnected) trigger.focus();
+    };
   }, []);
-  return (
+  return createPortal(
     <dialog
       ref={ref}
+      aria-labelledby={titleId}
       className={`modal ${wide ? "wide" : ""}`}
       onCancel={onClose}
       onClick={(e) => {
@@ -28,8 +36,9 @@ export function Modal({
       }}
     >
       <div className="modal-head">
-        <h2> {t(title)} </h2>
+        <h2 id={titleId}> {t(title)} </h2>
         <button
+          type="button"
           className="icon-btn"
           aria-label={t("Close dialog")}
           onClick={onClose}
@@ -38,7 +47,8 @@ export function Modal({
         </button>
       </div>
       {children}
-    </dialog>
+    </dialog>,
+    document.body,
   );
 }
 export function Empty({

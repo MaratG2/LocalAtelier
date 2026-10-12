@@ -2381,29 +2381,19 @@ input[type="checkbox"] {
   flex-wrap: wrap;
   gap: 6px;
 }
-.composer-tool-select {
-  display: flex;
-  min-width: 0;
-}
-.composer-tool-select select,
+
 .composer-option {
   min-height: 34px;
-  padding: 6px 9px;
+  padding: 6px 10px;
   border: 1px solid var(--line);
   border-radius: 6px;
   background: white;
   color: var(--ink);
-  font-size: 11px;
-}
-.composer-tool-select select {
-  max-width: 210px;
-  text-overflow: ellipsis;
-}
-.composer-option {
+  font-size: 12px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 6px;
+  gap: 7px;
 }
 .composer-option:hover,
 .composer-option[aria-expanded="true"] {
@@ -2416,98 +2406,218 @@ input[type="checkbox"] {
   border-radius: 3px;
   object-fit: cover;
 }
-.composer-options-panel {
-  position: relative;
-  margin-top: 12px;
-  padding: 14px 40px 14px 0;
-  border-top: 1px solid var(--line);
-  border-bottom: 1px solid var(--line);
-}
-.composer-options-panel .panel-close {
-  position: absolute;
-  right: 0;
-  top: 9px;
-}
-.game-controls {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: end;
-  gap: 10px;
-}
-.game-controls label {
-  display: grid;
-  gap: 5px;
-  font-size: 11px;
+.tool-trigger {
+  background: #f2f5ef;
   font-weight: 600;
 }
-.game-controls input[type="number"] {
-  width: 76px;
+.composer .check-label {
+  font-size: 12px;
+  color: #526456;
 }
-.game-controls select,
-.game-controls input[type="number"] {
-  border: 1px solid var(--line);
-  border-radius: 6px;
-  padding: 7px;
-  background: white;
-}
-.game-controls > p {
-  flex-basis: 100%;
-  margin: 0;
+.render-count {
   font-size: 11px;
   color: #526456;
-  max-width: 75ch;
 }
-.game-controls .check-label {
-  display: flex;
-  padding: 7px 0;
+.settings-dialog {
+  display: grid;
+  gap: 20px;
 }
-.style-controls {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 10px 20px;
-  font-size: 11px;
+.settings-dialog .dialog-actions {
+  margin-top: 0;
 }
+.style-controls,
 .style-toggles {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 12px;
+  display: grid;
+  gap: 16px;
 }
-.style-controls > p {
-  flex: 1;
-  min-width: 140px;
-  max-width: 60ch;
+.style-controls p {
   margin: 0;
-  overflow-wrap: anywhere;
-  line-height: 1.5;
+  line-height: 1.6;
   color: #526456;
+  overflow-wrap: anywhere;
 }
 .style-controls .quiet {
+  justify-self: start;
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  font-size: 11px;
+}
+.settings-dialog .check-label {
+  font-size: 13px;
+}
+.advanced-dialog > label:not(.check-label),
+.workshop-settings > label:not(.check-label),
+.custom-frame-field {
+  display: grid;
+  gap: 8px;
+  font-size: 13px;
+  font-weight: 550;
+}
+.advanced-dialog input[type="number"],
+.workshop-settings input[type="number"],
+.workshop-settings select,
+.frame-offsets input {
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: white;
+  min-width: 0;
+  width: 100%;
+}
+.advanced-dialog > p,
+.setup-note {
+  font-size: 13px;
+  line-height: 1.6;
+  color: #526456;
+  margin: 0;
+}
+.advanced-dialog .pixel-settings {
+  margin: 0;
+}
+.tool-picker > p {
+  margin: 0 0 20px;
+  color: #526456;
+}
+.modal:has(.game-setup),
+.modal:has(.tool-picker) {
+  width: 820px;
+}
+.asset-image.game-atlas-image img {
+  object-fit: contain;
+}
+.settings-dialog .check-label,
+.workshop-settings .check-label {
+  color: #526456;
+}
+.tool-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+}
+.tool-choice {
+  text-align: left;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 22px 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  background: #fff;
+  color: var(--ink);
+  transition:
+    background 140ms,
+    border-color 140ms;
+}
+.tool-choice:hover,
+.tool-choice[aria-pressed="true"] {
+  border-color: #718c73;
+  background: #f2f6ef;
+}
+.tool-choice-icon {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  color: #386544;
+  margin-bottom: 10px;
+}
+.tool-choice strong {
+  font-size: 16px;
+  font-weight: 600;
+}
+.tool-choice > span:last-child {
+  color: #526456;
+  font-size: 13px;
+  line-height: 1.6;
+}
+.game-setup {
+  display: grid;
+  gap: 22px;
+}
+.preset-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+.preset-grid button {
+  text-align: left;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 15px;
+  border: 1px solid var(--line);
+  background: white;
+  border-radius: 8px;
+  color: var(--ink);
+}
+.preset-grid button[aria-pressed="true"],
+.preset-grid button:hover {
+  border-color: #718c73;
+  background: #f2f6ef;
+}
+.preset-grid button > span {
+  display: grid;
+  gap: 5px;
+  flex: 1;
+}
+.preset-grid strong {
+  font-weight: 600;
+  font-size: 14px;
+}
+.preset-grid small {
+  font-size: 12px;
+  color: #526456;
+}
+.setup-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 13px;
+}
+.setup-row .segmented button {
+  min-width: 44px;
+}
+.custom-frame-field textarea {
+  width: 100%;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  resize: vertical;
+  line-height: 1.7;
+}
+.custom-frame-field small {
+  font-size: 12px;
+  font-weight: 400;
+  color: #526456;
 }
 @media (max-width: 700px) {
   .composer-options {
     width: 100%;
   }
-  .composer-tool-select {
-    flex: 1;
+  .tool-grid {
+    grid-template-columns: 1fr;
   }
-  .composer-options.has-game .composer-tool-select {
-    flex-basis: 100%;
+  .tool-choice {
+    gap: 8px;
+    padding: 16px;
   }
-  .composer-tool-select select {
-    width: 100%;
-    max-width: none;
-    min-width: 0;
+  .tool-choice-icon {
+    margin-bottom: 0;
   }
-  .composer-options-panel .style-controls {
+  .preset-grid {
+    grid-template-columns: 1fr;
+  }
+  .setup-row {
     align-items: flex-start;
+    flex-direction: column;
   }
-  .style-controls > p {
-    flex-basis: 100%;
+  .composer-foot {
+    flex-wrap: wrap;
+    gap: 10px;
+  }
+  .render-count {
+    order: 3;
+    width: 100%;
   }
 }
 .project-style-fields {
@@ -2547,57 +2657,186 @@ input[type="checkbox"] {
   object-fit: cover;
   border-radius: 7px;
 }
-.game-workbench-grid {
+
+.workshop-main {
   display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 32px;
-  margin: 24px 0;
+  grid-template-columns: minmax(0, 1.6fr) minmax(200px, 1fr);
+  gap: 28px;
 }
-.tile-palette,
+.workshop-view {
+  min-width: 0;
+}
+.workshop-settings {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 16px;
+}
+.workshop-settings h3 {
+  font-size: 14px;
+  margin: 0;
+}
+.workshop-settings p,
+.game-workbench > p {
+  line-height: 1.6;
+  color: #526456;
+  font-size: 12px;
+  margin: 0;
+}
+.workshop-settings .check-label {
+  font-size: 12px;
+}
+.workshop-settings details {
+  border-block: 1px solid var(--line);
+  padding-block: 16px;
+}
+.workshop-settings summary {
+  cursor: pointer;
+  font-size: 13px;
+}
+.workshop-settings details p {
+  margin: 12px 0;
+}
+.frame-offsets {
+  display: flex;
+  gap: 12px;
+  margin: 12px 0;
+}
+.frame-offsets label {
+  min-width: 0;
+  display: grid;
+  gap: 6px;
+}
+.animation-stage {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 1;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  overflow: hidden;
+  background-color: #eef1eb;
+  background-image: conic-gradient(
+    #e0e6dc 25%,
+    transparent 0 50%,
+    #e0e6dc 0 75%,
+    transparent 0
+  );
+  background-size: 24px 24px;
+}
+.current-frame,
+.onion-frame {
+  position: absolute;
+  inset: 0;
+}
+.onion-frame {
+  opacity: 0.25;
+}
+.ground-guide {
+  position: absolute;
+  top: 87.5%;
+  width: 100%;
+  border-top: 1px dashed #79947788;
+  pointer-events: none;
+}
+.is-pixel .current-frame,
+.is-pixel .onion-frame,
+.is-pixel .frame-strip span,
+.is-pixel .tilemap-grid button,
+.is-pixel .repeat-preview div {
+  image-rendering: pixelated;
+}
+.playback-bar {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  margin: 12px 0;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+.playback-bar > span {
+  margin-left: auto;
+  color: #526456;
+}
+.frame-strip {
+  display: flex;
+  gap: 6px;
+  overflow-x: auto;
+  padding: 4px 2px 8px;
+  margin-top: 12px;
+}
+.frame-strip button {
+  flex: 0 0 60px;
+  display: grid;
+  gap: 4px;
+  padding: 3px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: #f4f6f0;
+  color: #526456;
+}
+.frame-strip button[aria-pressed="true"] {
+  border-color: #315f3e;
+  box-shadow: 0 0 0 1px #315f3e;
+}
+.frame-strip span {
+  width: 100%;
+  aspect-ratio: 1;
+}
+.frame-strip small {
+  font-size: 11px;
+}
 .tilemap-grid {
   display: grid;
   width: 100%;
   aspect-ratio: 1;
-  gap: 1px;
-  background: #dbe4db;
+  gap: 0;
+  background: #e4e9df;
+  grid-template-columns: repeat(12, 1fr);
 }
-.tile-palette {
-  align-content: start;
-  aspect-ratio: auto;
-}
-.tile-palette button,
 .tilemap-grid button {
-  background-color: #f6f7f1;
+  background-color: transparent;
   border: 0;
+  outline: 1px solid #c9d3c477;
+  outline-offset: -1px;
   border-radius: 0;
   padding: 0;
   aspect-ratio: 1;
-  image-rendering: pixelated;
+  min-width: 0;
 }
-.tile-palette button[aria-pressed="true"] {
-  outline: 3px solid #285b3c;
-  outline-offset: -3px;
+.tilemap-grid button:focus-visible {
+  outline: 2px solid #315f3e;
+  position: relative;
+  z-index: 1;
 }
-.tilemap-grid {
-  grid-template-columns: repeat(12, 1fr);
-}
-.sprite-preview {
-  width: min(100%, 280px);
+.repeat-preview {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
   aspect-ratio: 1;
-  image-rendering: pixelated;
-  background-color: #eef1e8;
-  margin-bottom: 16px;
+}
+.repeat-preview div {
+  aspect-ratio: 1;
+}
+.workshop-tabs {
+  margin-bottom: 14px;
 }
 .game-map-actions {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
-  margin-top: 16px;
+  margin-top: 12px;
 }
-.game-workbench p {
-  line-height: 1.5;
-  color: #526456;
-  font-size: 13px;
+.game-workbench .workshop-notice {
+  margin-bottom: 20px;
+  padding: 12px 14px;
+  background: #f6f1df;
+  border-radius: 6px;
+  color: #665b31;
+}
+@media (max-width: 700px) {
+  .workshop-main {
+    grid-template-columns: 1fr;
+  }
 }
 .settings-section textarea {
   display: block;
@@ -2627,9 +2866,6 @@ input[type="checkbox"] {
   }
   .studio-main > .image-page {
     min-height: calc(100dvh - 150px);
-  }
-  .game-workbench-grid {
-    grid-template-columns: 1fr;
   }
   .temporary-results {
     right: 16px;

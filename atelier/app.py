@@ -229,12 +229,33 @@ def create_app(data_root=None, project_root=None, runtime_factory=Runtime):
         asset = store.asset(asset_id)
         if not asset or asset['deleted']:
             return jsonify(error='Image not found'), 404
-        layout = object_body().get('layout') if request.method == 'POST' else None
-        bundle, atlas = export_bundle(store, asset, layout)
+        body = object_body() if request.method == 'POST' else {}
+        bundle, atlas = export_bundle(store, asset, body.get('layout'), body.get('options'), preview=request.args.get('preview') == 'true')
         if request.args.get('preview') == 'true':
             data = io.BytesIO(); atlas.save(data, 'PNG'); data.seek(0)
             return send_file(data, mimetype='image/png')
         return send_file(io.BytesIO(bundle), mimetype='application/zip', as_attachment=True, download_name='atelier-game-assets.zip')
+
+    @app.post('/api/assets/<asset_id>/game-frame')
+    def game_frame(asset_id):
+        from .gamedev import validate_tool
+        from .generation import integer
+        asset = store.asset(asset_id)
+        if not asset or asset['deleted']:
+            return jsonify(error='Image not found'), 404
+        tool = validate_tool(asset['metadata'].get('game_asset'))
+        if not tool or tool['kind'] != 'spritesheet':
+            raise ValueError('Choose a character sheet first')
+        index = integer(object_body().get('index'), 'Frame', 0, tool.get('count', tool['columns'] * tool['rows']) - 1)
+        with Image.open(store.assets / asset['filename']) as source:
+            x, y = index % tool['columns'], index // tool['columns']
+            frame = source.crop((round(x * source.width / tool['columns']), round(y * source.height / tool['rows']),
+                                 round((x + 1) * source.width / tool['columns']), round((y + 1) * source.height / tool['rows'])))
+        project_id = asset['project_id'] if store.project(asset['project_id']) else 'inbox'
+        metadata = {'source_asset_id': asset_id, 'source_frame': index}
+        if asset['metadata'].get('pixelation'):
+            metadata['pixelation'] = asset['metadata']['pixelation']
+        return jsonify(save_image(store, frame, project_id, kind='reference', name=f'Character frame {index + 1}', metadata=metadata)), 201
 
     @app.post('/api/videos/jobs')
     def video_jobs():

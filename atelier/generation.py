@@ -58,7 +58,7 @@ def validate(data, store):
         request[name] = integer(data.get(name, default), name, low, high)
     if request["width"] % 64 or request["height"] % 64:
         raise ValueError("Dimensions must be multiples of 64")
-    if tool:
+    if tool and tool['generation'] == 'sheet':
         import math
         longest, shortest = max(tool['columns'], tool['rows']), min(tool['columns'], tool['rows'])
         if longest > 4 * shortest:
@@ -82,7 +82,20 @@ def validate(data, store):
         request['pixelation'] = pixelation
     if tool:
         request['game_asset'] = tool
-        request['prompt'] += '\n\n' + tool_prompt(tool)
+        if tool['generation'] == 'individual':
+            request['width'] = request['height'] = max(request['width'], request['height'])
+            if tool['kind'] == 'spritesheet':
+                if model_id != 'qwen-image-2.1':
+                    raise ValueError('Character animation requires Qwen for transparent reference-guided frames')
+                if len(refs) >= model['max_references']:
+                    raise ValueError('Leave one reference slot free for the character anchor')
+                request['transparent_background'] = True
+            else:
+                request['transparent_background'] = False
+            if request['seed'] + request['batch_size'] * tool['count'] - 1 > 4294967295:
+                raise ValueError('Seed has no room for all game frames')
+        else:
+            request['prompt'] += '\n\n' + tool_prompt(tool)
         request['keep_original_aspect'] = False
     return request
 
@@ -201,8 +214,14 @@ class GenerationQueue:
                     def progress(phase, value):
                         if job_id not in self.cancelled:
                             self.store.update_job(job_id, phase=phase, progress=round((index * 100 + value) / request["batch_size"]))
-                    seed = request["seed"] + index
-                    image, metadata = self.runtime.generate({**request, "seed": seed}, refs, progress)
+                    tool = request.get('game_asset')
+                    individual = tool and tool['generation'] == 'individual'
+                    seed = request['seed'] + index * (tool['count'] if individual else 1)
+                    if individual:
+                        from .game_render import render_game
+                        image, metadata = render_game(self.runtime, self.store, {**request, 'seed': seed}, refs, progress, lambda: job_id in self.cancelled)
+                    else:
+                        image, metadata = self.runtime.generate({**request, 'seed': seed}, refs, progress)
                     if request.get('pixelation'):
                         progress('Applying pixel finish', 99)
                         image, metadata['pixelation'] = pixelate(image, request['pixelation'])
