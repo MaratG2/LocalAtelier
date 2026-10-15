@@ -1,16 +1,21 @@
 import { t, number } from "./i18n";
 import { useEffect, useState } from "react";
-import { Monitor, HardDrive, Power, FileText, ShieldCheck } from "lucide-react";
+import { Monitor, HardDrive, Power, FileText, ShieldCheck, Smartphone } from "lucide-react";
 import { api, bytes, patch, post } from "./api";
 import type { Snapshot } from "./types";
+import type { PersonalAction } from "./PersonalSpace";
 export function Settings({
   snapshot,
   refresh,
   notify,
+  onPersonal,
+  onLock,
 }: {
   snapshot: Snapshot;
   refresh: () => Promise<void>;
   notify: (s: string) => void;
+  onPersonal: (mode: PersonalAction) => void;
+  onLock: () => Promise<void>;
 }) {
   const [settings, setSettings] = useState({
     low_vram: false,
@@ -66,8 +71,102 @@ export function Settings({
           {t(error)}{" "}
         </div>
       ) : null}
+      <section className="surface settings-section personal-settings">
+        <h2>
+          <ShieldCheck size={21} />
+          {t("Personal space")}
+        </h2>
+        <p>
+          {t(
+            snapshot.status?.personal
+              ? "You are in your personal space. Projects, history, uploads and results are saved separately and encrypted."
+              : "Keep private projects and creations behind a password. They stay saved between sessions, separate from your regular workspace.",
+          )}
+        </p>
+        {!snapshot.status?.personal_configured && (
+          <p className="muted-text">
+            {t(
+              "Your existing projects stay in the regular workspace. Only work created inside personal space is encrypted.",
+            )}
+          </p>
+        )}
+        <div className="personal-actions">
+          <button
+            className={snapshot.status?.personal ? "secondary" : "primary"}
+            disabled={snapshot.status?.temporary}
+            onClick={() =>
+              onPersonal(
+                snapshot.status?.personal
+                  ? "password"
+                  : snapshot.status?.personal_configured
+                    ? "unlock"
+                    : "setup",
+              )
+            }
+          >
+            {t(
+              snapshot.status?.personal
+                ? "Change personal password"
+                : snapshot.status?.personal_configured
+                  ? "Enter personal space"
+                  : "Set personal password",
+            )}
+          </button>
+          {snapshot.status?.personal && (
+            <button
+              className="secondary"
+              onClick={() => void onLock().catch((e) => setError(e.message))}
+            >
+              {t("Lock and leave")}
+            </button>
+          )}
+        </div>
+        {snapshot.status?.temporary && (
+          <p>{t("End incognito mode before opening personal space.")}</p>
+        )}
+        {new URLSearchParams(location.search).has("locked") && (
+          <p role="status">
+            {t("Personal space is locked. Enter your password to continue.")}
+          </p>
+        )}
+        <details>
+          <summary>{t("How privacy and downloads work")}</summary>
+          <p>
+            {t(
+              "Saved files, thumbnails, prompts and project history use password-protected encryption. Downloads are ordinary files and are no longer protected by this lock.",
+            )}
+          </p>
+          <p>
+            {t(
+              "GPU tools need temporary working files. These are removed after processing or locking; crash leftovers are cleaned on the next start. This is not secure disk erasure. Use full-disk encryption for protection from disk recovery, system swap or a compromised computer.",
+            )}
+          </p>
+          <p>
+            {t(
+              "Locks when you leave or reload this page, after 15 minutes without activity, or when the studio restarts. All tabs in this browser share the lock. Locking stops queued jobs; a running image may finish and be saved privately before cleanup.",
+            )}
+          </p>
+          <p>
+            {t(
+              "Back up the entire data/personal folder while locked. Keep your password safe: it cannot be reset or recovered.",
+            )}
+          </p>
+          <p>
+            {t(
+              "Installed models and GPU settings are shared. Private prompts are not saved in browser drafts.",
+            )}
+          </p>
+        </details>
+      </section>
       <section className="surface settings-section">
-        <h2> {t("Global image style")} </h2>
+        <h2>
+          {" "}
+          {t(
+            snapshot.status?.personal
+              ? "Personal image style"
+              : "Global image style",
+          )}{" "}
+        </h2>
         <p>
           {" "}
           {t(
@@ -200,6 +299,30 @@ export function Settings({
             "Back up the data folder to preserve projects, prompts, reference images and generated files. Archived projects and trashed images remain recoverable.",
           )}{" "}
         </p>
+      </section>
+      <section className="surface settings-section">
+        <h2>
+          <Smartphone size={20} /> {t("Use on your phone")}
+        </h2>
+        <p className="muted-text">
+          {t("Connect your phone to the same Wi-Fi network as this computer, then open this address. Keep the computer and Local Atelier running.")}
+        </p>
+        <div className="personal-actions">
+          {snapshot.status?.network_urls?.length ? snapshot.status.network_urls.map((url) => (
+            <a key={url} className="secondary" href={url}>{url}</a>
+          )) : (
+            <p className="muted-text">{t("No local network address found. Connect to Wi-Fi or Ethernet and restart the studio.")}</p>
+          )}
+        </div>
+        <details>
+          <summary>{t("Connection and privacy")}</summary>
+          <p className="muted-text">
+            {t("If the connection is blocked, run Enable phone access.cmd on this computer and accept the Windows permission prompt. Guest Wi-Fi and VPNs may prevent devices from connecting.")}
+          </p>
+          <p className="muted-text">
+            {t("Use a trusted home network: the regular workspace is available to devices on your local subnet. Personal space still requires its password, but HTTP does not encrypt network traffic. Do not forward this port to the internet.")}
+          </p>
+        </details>
       </section>
       <section className="surface settings-section">
         <h2>

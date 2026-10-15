@@ -118,8 +118,7 @@ def render_thumbnail(scene, target):
 def save_mesh(store, source, project_id, *, name, prompt="", seed=None, metadata=None, model_id="trellis2"):
     scene = load_scene(source)
     asset_id = identifier()
-    folder = store.assets / asset_id
-    folder.mkdir()
+    folder = store.output_folder(asset_id)
     target = folder / "model.glb"
     if isinstance(source, bytes):
         target.write_bytes(source)
@@ -137,6 +136,7 @@ def save_mesh(store, source, project_id, *, name, prompt="", seed=None, metadata
                 metadata["textures"].append({"name": filename, "channel": channel, "width": texture.width, "height": texture.height})
     render_thumbnail(scene, folder / "preview.png")
     (folder / "metadata.json").write_text(json.dumps({**metadata, "prompt": prompt, "model_id": model_id}, indent=2), encoding="utf-8")
+    store.seal_folder(asset_id)
     store.execute("INSERT INTO assets(id,project_id,kind,filename,thumbnail,name,prompt,model_id,width,height,seed,metadata,created) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)",
         (asset_id, project_id, "mesh", f"{asset_id}/model.glb", f"{asset_id}/preview.png", name, prompt, model_id, 512, 512, seed, json.dumps(metadata), now()))
     store.execute("UPDATE projects SET updated=? WHERE id=?", (now(), project_id))
@@ -154,22 +154,22 @@ def zip_files(files):
 def export_mesh(store, asset, format):
     if format not in EXPORT_FORMATS:
         raise ValueError("Choose GLB, glTF, OBJ, STL, PLY or texture maps")
-    folder = (store.assets / asset["filename"]).parent
+    folder = Path(asset['filename']).parent
     if format == "glb":
-        return (folder / "model.glb").read_bytes(), "glb", "model/gltf-binary"
+        return store.read_file(folder / 'model.glb'), 'glb', 'model/gltf-binary'
     if format == "textures":
-        files = {t["name"]: (folder / t["name"]).read_bytes() for t in asset["metadata"]["textures"]}
+        files = {t['name']: store.read_file(folder / t['name']) for t in asset['metadata']['textures']}
         if not files:
             raise ValueError("This mesh has no texture maps")
         return zip_files(files), "textures.zip", "application/zip"
-    scene = load_scene(folder / "model.glb")
+    scene = load_scene(store.read_file(folder / 'model.glb'))
     if format == "gltf":
         return zip_files(scene.export(file_type="gltf")), "gltf.zip", "application/zip"
     if format == "obj":
         obj, textures = trimesh.exchange.obj.export_obj(scene, return_texture=True)
         files = {"model.obj": obj, **(textures or {})}
         for texture in asset["metadata"]["textures"]:
-            files[texture["name"]] = (folder / texture["name"]).read_bytes()
+            files[texture['name']] = store.read_file(folder / texture['name'])
         files["README.txt"] = "OBJ/MTL uses base color. Original PBR maps are included separately. GLB/glTF preserves the complete material."
         return zip_files(files), "obj.zip", "application/zip"
     mesh = scene.to_mesh()

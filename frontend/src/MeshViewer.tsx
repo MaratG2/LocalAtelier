@@ -1,4 +1,5 @@
 import { t } from "./i18n";
+import { studioFetch } from "./api";
 import { useEffect, useRef, useState } from "react";
 import * as THREE from "three";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
@@ -253,7 +254,7 @@ export default function MeshViewer({
               if (!blob || disposed) return;
               const body = new FormData();
               body.append("image", blob, "preview.png");
-              void fetch(`/api/meshes/${assetId}/preview`, {
+              void studioFetch(`/api/meshes/${assetId}/preview`, {
                 method: "POST",
                 body,
               }).catch(() => {});

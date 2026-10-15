@@ -1,0 +1,165 @@
+.modal:has(.mask-editor) {
+  width: min(920px, calc(100vw - 24px));
+  max-height: calc(100dvh - 24px);
+}
+.mask-editor {
+  padding: 20px 24px 24px;
+}
+.mask-editor > p {
+  max-width: 68ch;
+  color: var(--ink);
+}
+.mask-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+  margin: 18px 0 12px;
+}
+.mask-toolbar button {
+  min-height: 44px;
+  min-width: 44px;
+}
+.mask-brush-tools,
+.mask-zoom-tools {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+.mask-zoom-tools {
+  margin-left: auto;
+  font-variant-numeric: tabular-nums;
+}
+.mask-brush-size {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+}
+.mask-brush-size input {
+  width: 100px;
+}
+.mask-viewport {
+  width: 100%;
+  max-height: 52dvh;
+  overflow: auto;
+  background: var(--soft);
+  border-radius: 8px;
+}
+.mask-stage {
+  position: relative;
+  margin: auto;
+}
+.mask-stage img,
+.mask-stage canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+.mask-stage img {
+  user-select: none;
+}
+.mask-stage canvas {
+  touch-action: none;
+  cursor: crosshair;
+}
+.mask-stage canvas:focus-visible {
+  outline: 3px solid var(--green);
+  outline-offset: -3px;
+}
+.mask-cursor {
+  position: absolute;
+  border: 1px solid white;
+  outline: 1px solid #303e34;
+  border-radius: 50%;
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+}
+.mask-adjustments {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px 32px;
+  margin: 20px 0 8px;
+}
+.mask-adjustments label {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-size: 13px;
+  flex: 1;
+}
+.mask-adjustments input {
+  flex: 1;
+  min-width: 80px;
+  width: 100px;
+}
+.mask-adjustments output {
+  min-width: 32px;
+  font-variant-numeric: tabular-nums;
+}
+.mask-editor input[type="range"] {
+  accent-color: var(--green);
+}
+.mask-editor > .muted-text,
+.mask-keyboard {
+  font-size: 12px;
+  color: var(--muted);
+}
+.mask-keyboard {
+  margin-top: 12px;
+}
+.mask-keyboard summary {
+  cursor: pointer;
+}
+.mask-editor .dialog-actions {
+  margin-top: 22px;
+  position: sticky;
+  bottom: 0;
+  background: #fff;
+  padding-top: 12px;
+  padding-bottom: 12px;
+}
+.masked-edit-tools {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  margin-top: 10px;
+}
+.masked-edit-tools .secondary {
+  font-size: 12px;
+}
+.masked-edit-tools > span {
+  color: var(--green);
+  font-size: 12px;
+}
+.masked-edit-tools .quiet {
+  font-size: 12px;
+}
+@media (max-width: 600px) {
+  .mask-editor {
+    padding: 14px 16px 18px;
+  }
+  .mask-toolbar {
+    gap: 6px;
+  }
+  .mask-brush-size {
+    order: 2;
+    flex: 1 1 100%;
+  }
+  .mask-brush-size input {
+    flex: 1;
+  }
+  .mask-adjustments {
+    flex-direction: column;
+    gap: 12px;
+  }
+  .mask-zoom-tools {
+    gap: 0;
+  }
+  .mask-zoom-tools > span {
+    font-size: 11px;
+  }
+}

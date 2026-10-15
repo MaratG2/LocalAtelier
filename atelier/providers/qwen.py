@@ -10,33 +10,14 @@ from urllib.parse import urlsplit
 
 import httpx
 import websocket
-from PIL import Image
+from PIL import Image, ImageFilter
+from .workflow import validate_workflow
 
 MODEL = "qwen_image_2.1_int8_convrot.safetensors"
 ENCODER = "qwen3vl_8b_int8_convrot.safetensors"
 VAE = "qwen_image_2.1_vae_bf16.safetensors"
 REQUIRED_NODES = {"UNETLoader", "CLIPLoader", "VAELoader", "TextEncodeQwenImage21", "QwenImage21Cache",
                   "EmptyLatentImage", "KSampler", "VAEDecode", "VAEDecodeTiled", "SaveImage", "LoadImage", "JoinImageWithAlpha"}
-
-
-def validate_workflow(graph, node_info):
-    """Fail before submission if an engine upgrade changes an input contract.
-
-    ComfyUI can silently ignore misspelled autogrow image inputs. Check expanded
-    reference keys against the engine's actual schema, as well as required keys.
-    """
-    for node in graph.values():
-        name = node["class_type"]
-        schema = node_info[name]["input"]
-        inputs = node["inputs"]
-        allowed = set(schema.get("required", {})) | set(schema.get("optional", {}))
-        for field, definition in schema.get("required", {}).items():
-            if definition[0] == "COMFY_AUTOGROW_V3":
-                allowed.update(f"{field}.{slot}" for slot in definition[1]["template"]["names"])
-            elif field not in inputs:
-                raise RuntimeError(f"{name} is missing required input {field}; update the workflow for this ComfyUI version")
-        if set(inputs) - allowed:
-            raise RuntimeError(f"{name} contains unsupported inputs: {sorted(set(inputs) - allowed)}")
 
 
 def build_workflow(prompt, width, height, seed, references, *, num_inference_steps=25,
@@ -118,10 +99,25 @@ class ComfyBackend:
                 response.raise_for_status()
                 data = response.json()
                 uploaded.append(f"{data['subfolder']}/{data['name']}" if data.get("subfolder") else data["name"])
+            edit_mask = settings.pop('edit_mask', None)
             graph = build_workflow(prompt, width, height, seed, uploaded, encoder=self.encoder, **settings)
+            if edit_mask is not None:
+                # Import graph wiring without importing host-side blending dependencies.
+                from .workflow import add_mask_nodes
+                mask = edit_mask.resize((width, height), Image.Resampling.BILINEAR)
+                radius = max(4, round(max(width, height) / 128))
+                mask = mask.filter(ImageFilter.MaxFilter(radius * 2 + 1)).filter(ImageFilter.GaussianBlur(2))
+                buf = io.BytesIO(); mask.save(buf, format='PNG')
+                response = client.post(f'{self.url}/upload/image', files={'image': (f'mask-{client_id}.png', buf.getvalue(), 'image/png')}, data={'type': 'input'})
+                response.raise_for_status()
+                mask_name = response.json()['name']
+                add_mask_nodes(graph, mask_name, uploaded[0], ['3', 0])
+            # Save a fresh file even when the engine reuses an identical cached render.
+            graph['9']['inputs']['filename_prefix'] = f'LocalAtelier/{client_id}'
             if self.info is not None:
                 validate_workflow(graph, self.info)
             ws = websocket.create_connection(ws_url, timeout=1, suppress_origin=True)
+            prompt_id = None
             try:
                 response = client.post(f"{self.url}/prompt", json={"prompt": graph, "client_id": client_id})
                 if response.is_error:
@@ -162,3 +158,8 @@ class ComfyBackend:
                         raise RuntimeError("Generation exceeded one hour. Check the ComfyUI console before retrying.")
             finally:
                 ws.close()
+                if prompt_id:
+                    try:
+                        client.post(f'{self.url}/history', json={'delete': [prompt_id]}).raise_for_status()
+                    except httpx.HTTPError:
+                        pass

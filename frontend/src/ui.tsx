@@ -20,6 +20,7 @@ export function Modal({
     const dialog = ref.current;
     const trigger = document.activeElement as HTMLElement | null;
     dialog?.showModal();
+    dialog?.querySelector<HTMLElement>("[data-dialog-autofocus]")?.focus();
     return () => {
       dialog?.close();
       if (trigger?.isConnected) trigger.focus();
@@ -30,7 +31,10 @@ export function Modal({
       ref={ref}
       aria-labelledby={titleId}
       className={`modal ${wide ? "wide" : ""}`}
-      onCancel={onClose}
+      onCancel={(event) => {
+        event.preventDefault();
+        onClose();
+      }}
       onClick={(e) => {
         if (e.target === e.currentTarget) onClose();
       }}

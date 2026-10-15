@@ -11,7 +11,7 @@ from pathlib import Path, PurePosixPath
 
 import httpx
 
-from .catalog import CATALOG
+from .plugins import catalog_for
 from .storage import identifier, now
 
 CREATE_FLAGS = subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0
@@ -27,6 +27,9 @@ def weights_at(model, root):
 
 def installed(model, root):
     root = Path(root)
+    if model.get('plugin_id'):
+        from .plugins import complete
+        return complete(model, root)
     weights = weights_at(model, root)
     if model["id"] == "vdn-h3":
         from .video_install import complete
@@ -51,7 +54,7 @@ class ModelManager:
         self.accepting = True
 
     def record(self, model_id):
-        if model_id not in CATALOG:
+        if model_id not in catalog_for(self.store):
             raise ValueError("Unknown model")
         return self.store.one("SELECT * FROM models WHERE id=?", (model_id,))
 
@@ -63,15 +66,15 @@ class ModelManager:
 
     def list(self):
         result = []
-        for model_id, model in CATALOG.items():
+        for model_id, model in catalog_for(self.store).items():
             record = self.record(model_id)
             root = Path(record["runtime_path"]) if record else None
             complete = installed(model, root) and bool(record['verified']) if root else False
             size = sum(p.stat().st_size for p in weights_at(model, root).rglob("*") if p.is_file() and p.suffix in {".safetensors", ".gguf"}) if root and root.exists() else 0
-            item = {key: value for key, value in model.items() if key not in {"files", "hub_revision", "port", "weight_dir"}}
+            item = {key: value for key, value in model.items() if not key.startswith('_') and key not in {"files", "hub_revision", "port", "weight_dir", "local_id"}}
             item.update(status="installed" if complete else "incomplete" if record else "not_installed",
                         source=record["source"] if record else None, runtime_path=str(root) if root else None,
-                        verified=record["verified"] if record else None,
+                        verified=record["verified"] if record and (not model.get('plugin_id') or complete) else None,
                         verification=json.loads(record["verification"]) if record and record["verification"] else None,
                         size_bytes=size, busy=self.busy(model_id), in_use=self.in_use(model_id))
             item["operation"] = next((dict(op) for op in reversed(list(self.operations.values())) if op["model_id"] == model_id), None)
@@ -90,6 +93,9 @@ class ModelManager:
             self._assert_idle(model_id)
             if action not in {"install", "verify"}:
                 raise ValueError("Unknown model operation")
+            model = catalog_for(self.store)[model_id]
+            if model.get('setup_hint'):
+                raise ValueError(model['setup_hint'])
             record = self.record(model_id)
             if action == "verify" and not record:
                 raise ValueError("Install this model first")
@@ -130,7 +136,7 @@ class ModelManager:
         os.environ.setdefault("HF_HUB_DISABLE_XET", "1")
         os.environ.setdefault("HF_HUB_DISABLE_TELEMETRY", "1")
         model_id = operation["model_id"]
-        model = CATALOG[model_id]
+        model = catalog_for(self.store)[model_id]
         if self.runtime:
             self.runtime.release(model_id)
         if os.name != "nt":
@@ -138,14 +144,19 @@ class ModelManager:
         uv = shutil.which("uv")
         if not uv:
             raise RuntimeError("Install uv from https://docs.astral.sh/uv/ then retry")
-        bundle = self.owned_root / model_id
-        bundle.mkdir(exist_ok=True)
+        bundle = self.store.plugins.bundle(model) if model.get('plugin_id') else self.owned_root / model_id
+        bundle.mkdir(parents=True, exist_ok=True)
         marker = bundle / ".atelier-owned.json"
         if any(bundle.iterdir()) and not marker.exists():
             raise RuntimeError("Refusing to adopt a non-empty unmanaged model folder")
         marker.write_text(json.dumps({"model_id": model_id}), encoding="utf-8")
         root = bundle
         self.store.execute("INSERT OR REPLACE INTO models(id,source,runtime_path,linked) VALUES(?,?,?,?)", (model_id, "managed", str(root), now()))
+        if model.get('plugin_id'):
+            self.store.plugins.adapter(model).install(
+                root, model, lambda args, cwd, env=None: self._run(operation, args, cwd, env),
+                lambda phase, value=None: self._update(operation, phase, value))
+            return
         if model_id == "vdn-h3":
             from .video_install import install
             install(root, lambda args, cwd, env: self._run(operation, args, cwd, env),
@@ -215,9 +226,25 @@ class ModelManager:
     def _verify(self, operation):
         model_id = operation["model_id"]
         self.store.execute("UPDATE models SET verified=NULL,verification=NULL WHERE id=?", (model_id,))
-        model = CATALOG[model_id]
+        model = catalog_for(self.store)[model_id]
         record = self.record(model_id)
         root = Path(record["runtime_path"])
+        if model.get('plugin_id'):
+            if root.resolve() != self.store.plugins.bundle(model).resolve():
+                raise ValueError('Plugin model path is outside its managed folder')
+            marker = root / '.atelier-owned.json'
+            if not marker.is_file() or json.loads(marker.read_text(encoding='utf-8')).get('model_id') != model_id:
+                raise ValueError('This model folder has no valid ownership marker')
+            verification = self.store.plugins.adapter(model).verify(
+                root, model, lambda phase, value=None: self._update(operation, phase, value))
+            if not isinstance(verification, dict) or not verification.get('files'):
+                raise ValueError('Plugin verification must return checked files')
+            (root / '.runtime-ready').write_text(model['_fingerprint'], encoding='utf-8')
+            if not installed(model, root):
+                raise ValueError('Plugin runtime or weights are incomplete')
+            verification['plugin_fingerprint'] = model['_fingerprint']
+            self.store.execute('UPDATE models SET verified=?,verification=? WHERE id=?', (now(), json.dumps(verification), model_id))
+            return
         if model_id == "vdn-h3":
             from .video_install import verify
             verification = verify(root, lambda phase, value: self._update(operation, phase, value))
@@ -264,10 +291,12 @@ class ModelManager:
             if self.runtime:
                 self.runtime.release(model_id)
             if record["source"] == "managed":
-                bundle = self.owned_root / model_id
+                model = catalog_for(self.store)[model_id]
+                bundle = self.store.plugins.bundle(model) if model.get('plugin_id') else self.owned_root / model_id
+                expected_parent = bundle.parent if model.get('plugin_id') else self.owned_root
                 root = Path(record["runtime_path"])
                 marker = bundle / ".atelier-owned.json"
-                if bundle.is_symlink() or getattr(bundle, "is_junction", lambda: False)() or bundle.resolve().parent != self.owned_root.resolve() or root.resolve() != bundle.resolve():
+                if bundle.is_symlink() or getattr(bundle, "is_junction", lambda: False)() or bundle.resolve().parent != expected_parent.resolve() or root.resolve() != bundle.resolve():
                     raise ValueError("Refusing to delete a model outside the managed folder")
                 if not marker.is_file() or json.loads(marker.read_text())["model_id"] != model_id:
                     raise ValueError("This model folder has no valid ownership marker")

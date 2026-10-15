@@ -5,5 +5,7 @@ psutil>=7,<8
 huggingface-hub>=0.36,<2
 python-dotenv>=1,<2
 numpy>=2.2,<3
+scipy>=1.17,<2
 trimesh==4.12.2
 av==18.1.0
+cryptography>=46,<51

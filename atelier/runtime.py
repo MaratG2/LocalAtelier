@@ -15,6 +15,7 @@ from PIL import Image
 
 from .catalog import CATALOG
 from .models import CREATE_FLAGS, installed, python_at, weights_at
+from .plugins import catalog_for
 
 
 class Runtime:
@@ -28,6 +29,7 @@ class Runtime:
         self.phase = "Idle"
         self.token = uuid.uuid4().hex
         self.worker_root = None
+        self.h3_session = None
         self.root.mkdir(exist_ok=True)
         atexit.register(self.release)
 
@@ -65,6 +67,32 @@ class Runtime:
             self.log_handles.clear()
             self.active_model = None
             self.phase = "Idle"
+            self.worker_root = None
+            self.h3_session = None
+
+    def release_session(self, session_root):
+        """Dispose only this session's worker; never stop another workspace's job."""
+        root = Path(session_root) / 'runtime'
+        if self.worker_root != root:
+            return True
+        if not self.lock.acquire(blocking=False):
+            return False
+        try:
+            if self.worker_root == root:
+                self.release()
+            return True
+        finally:
+            self.lock.release()
+
+    def _clear_private_media(self):
+        if not getattr(self.store, 'private', False) or self.active_model != 'qwen-image-2.1':
+            return
+        from .vault import remove_work_tree
+        # Keep the engine and its weights alive, but remove intermediate media.
+        for name in ('qwen-input', 'qwen-output', 'qwen-temp'):
+            path = self.root / name
+            remove_work_tree(path, self.root)
+            path.mkdir(exist_ok=True)
 
     def ensure(self, model_id, callback):
         model = CATALOG[model_id]
@@ -94,7 +122,7 @@ class Runtime:
                    "TORCHINDUCTOR_CACHE_DIR": str(cache / 'inductor'),
                    "DO_NOT_TRACK": "1", "HF_HUB_OFFLINE": "1", "TRANSFORMERS_OFFLINE": "1",
                    "ATELIER_WORKER_TOKEN": self.token, "PYTHONDONTWRITEBYTECODE": "1"}
-            if getattr(self.store, 'temporary', False):
+            if getattr(self.store, 'private', False):
                 scratch = self.root / 'temp'
                 scratch.mkdir(exist_ok=True)
                 env.update(TEMP=str(scratch), TMP=str(scratch), TMPDIR=str(scratch))
@@ -152,11 +180,19 @@ class Runtime:
 
     def generate(self, request, references, callback):
         model_id = request["model_id"]
+        model = catalog_for(self.store)[model_id]
+        if model.get('plugin_id'):
+            return self._generate_plugin(model, request, references, callback)
         url = self.ensure(model_id, callback)
         mode = request["mode"]
         payload = {key: request[key] for key in ("prompt", "width", "height", "seed", "num_inference_steps", "keep_original_aspect")}
         payload["mode"] = mode
         payload["refs_b64"] = []
+        if request.get('edit_mask_id'):
+            from .masking import read_mask
+            mask_buffer = io.BytesIO()
+            read_mask(self.store, request).save(mask_buffer, format='PNG')
+            payload['edit_mask_b64'] = base64.b64encode(mask_buffer.getvalue()).decode('ascii')
         for path in references:
             with Image.open(path) as reference:
                 reference.thumbnail((2048, 2048), Image.Resampling.LANCZOS)
@@ -197,6 +233,30 @@ class Runtime:
             raise RuntimeError("The model stream ended without a result")
         finally:
             self.phase = "Ready" if self.active_model else "Idle"
+            self._clear_private_media()
 
     def logs(self):
         return {path.stem: path.read_text(encoding="utf-8", errors="replace")[-12000:] for path in self.root.glob("*.log")}
+
+    def _generate_plugin(self, model, request, references, callback):
+        with self.lock:
+            root = self.store.plugins.bundle(model)
+            record = self.store.one('SELECT * FROM models WHERE id=?', (model['id'],))
+            if not record or not record['verified'] or Path(record['runtime_path']).resolve() != root.resolve() or not installed(model, root):
+                raise RuntimeError('Install and verify this plugin model first')
+            if self.worker_root != self.root or self.active_model != model['id'] or any(p.poll() is not None for p in self.processes):
+                callback('Switching model · freeing GPU memory', 0)
+                self.release()
+            self.worker_root = self.root
+            self.root.mkdir(parents=True, exist_ok=True)
+            self.active_model = model['id']
+            self.phase = 'Generating'
+            try:
+                image, metadata = self.store.plugins.adapter(model).generate(self, root, model, request, references, callback)
+                if not isinstance(image, Image.Image) or not isinstance(metadata, dict) or metadata.get('mock_mode'):
+                    raise RuntimeError('Plugin returned an invalid generation result')
+                self.phase = 'Ready'
+                return image, metadata
+            except Exception:
+                self.release()
+                raise

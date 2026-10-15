@@ -1,4 +1,22 @@
 @import url("./tokens.css");
+.personal-nav {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  min-height: 44px;
+  padding: 10px 14px;
+  border-radius: 8px;
+  text-align: left;
+}
+.personal-nav:hover { background: var(--canvas); }
+.personal-actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 18px; }
+.personal-settings details p + p { margin-top: 12px; }
+.personal-form > p { max-width: 60ch; }
+.personal-bar { background: #edf3ee; color: #254f3b; }
+.personal-bar strong { display: inline-flex; align-items: center; gap: 8px; }
+.personal-bar > .quiet { margin-left: auto; }
+.personal-bar > span { color: #496451; }
 .project-service-links {
   display: flex;
   gap: 18px;
@@ -768,6 +786,13 @@ textarea::placeholder {
 .model-library-list {
   display: grid;
   gap: 20px;
+}
+.models-page .page-head {
+  flex-wrap: wrap;
+}
+.models-page .page-head > .dialog-actions {
+  flex-wrap: wrap;
+  margin-left: auto;
 }
 .model-card {
   background: #fff;
@@ -1667,6 +1692,45 @@ input[type="checkbox"] {
 .detail-actions > * {
   font-size: 12px;
 }
+.detail-primary-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 14px 0;
+}
+.delete-generation-dialog > p {
+  color: var(--muted);
+  line-height: 1.65;
+}
+.delete-generation-preview {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin-bottom: 18px;
+  min-width: 0;
+}
+.delete-generation-preview img {
+  width: 72px;
+  height: 72px;
+  object-fit: cover;
+  border-radius: 8px;
+  background: var(--soft);
+}
+.delete-generation-preview > div {
+  min-width: 0;
+  display: grid;
+  gap: 5px;
+}
+.delete-generation-preview strong {
+  overflow-wrap: anywhere;
+}
+.delete-generation-preview span {
+  font-size: 12px;
+  color: var(--muted);
+}
+.delete-generation-dialog .dialog-actions {
+  flex-wrap: wrap;
+}
 .mobile-header,
 .nav-scrim {
   display: none;
@@ -2473,6 +2537,26 @@ input[type="checkbox"] {
 }
 .advanced-dialog .pixel-settings {
   margin: 0;
+}
+.plugin-image-options {
+  border: 0;
+  padding: 0;
+  margin: 0;
+  min-width: 0;
+}
+.plugin-image-options legend {
+  font-size: 13px;
+  font-weight: 600;
+  margin-bottom: 16px;
+}
+.plugin-image-options small {
+  color: #526456;
+  line-height: 1.5;
+  font-weight: 400;
+}
+.plugin-image-options input[type="range"] {
+  padding: 0;
+  accent-color: var(--green);
 }
 .tool-picker > p {
   margin: 0 0 20px;

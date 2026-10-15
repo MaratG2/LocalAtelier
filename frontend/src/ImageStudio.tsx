@@ -34,6 +34,8 @@ import {
   presetName,
 } from "./GameTools";
 import { ProjectForm } from "./Projects";
+import { MaskEditor } from "./MaskEditor";
+import { AssetDeleteDialog } from "./AssetDeleteDialog";
 import { api, date, patch, post } from "./api";
 import { Empty, Modal } from "./ui";
 import type { Asset, GameAsset, GenerationRequest, Snapshot } from "./types";
@@ -78,7 +80,9 @@ export function ImageStudio({
   refresh: () => Promise<void>;
 }) {
   const [draft] = useState(() =>
-    snapshot.status?.temporary ? {} : initialDraft(projectId),
+    snapshot.status?.temporary || snapshot.status?.personal
+      ? {}
+      : initialDraft(projectId),
   );
   const [prompt, setPrompt] = useState<string>(draft.prompt || "");
   const [modelId, setModelId] = useState<string>(
@@ -91,6 +95,7 @@ export function ImageStudio({
   const project = snapshot.projects.find((p) => p.id === projectId);
   const [useStyle, setUseStyle] = useState(true);
   const [useStyleReference, setUseStyleReference] = useState(true);
+  const [reusedStyle, setReusedStyle] = useState<{ prompt: string; reference: string | null } | null>(null);
   const [gameAsset, setGameAsset] = useState<GameAsset | null>(() =>
     draft.gameAsset ? normalizeGameAsset(draft.gameAsset) : null,
   );
@@ -99,7 +104,6 @@ export function ImageStudio({
   const [settingsPanel, setSettingsPanel] = useState<"style" | "game" | null>(
     null,
   );
-  const styleReference = useStyleReference ? project?.style_reference_id : null;
   const [mode, setMode] = useState<GenerationRequest["mode"]>("t2i");
   const [ratio, setRatio] = useState<string>(draft.ratio || "1:1");
   const [size, setSize] = useState<number>(draft.size || 1024);
@@ -121,6 +125,19 @@ export function ImageStudio({
       : 32,
   );
   const [refs, setRefs] = useState<Asset[]>([]);
+  const [maskEditor, setMaskEditor] = useState(false);
+  const [editMask, setEditMask] = useState<Asset | null>(null);
+  const [maskFeather, setMaskFeather] = useState(12);
+  useEffect(() => {
+    setEditMask((current) =>
+      mode === "edit" &&
+      !gameAsset &&
+      current?.metadata.source_id === refs[0]?.id
+        ? current
+        : null,
+    );
+    setMaskEditor(false);
+  }, [refs[0]?.id, mode, !!gameAsset]);
   const [assets, setAssets] = useState<Asset[]>([]);
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState("all");
@@ -129,9 +146,26 @@ export function ImageStudio({
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const [selected, setSelected] = useState<Asset | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<Asset | null>(null);
+  const [reusing, setReusing] = useState(false);
   const uploader = useRef<HTMLInputElement>(null);
   const promptInput = useRef<HTMLTextAreaElement>(null);
   const model = snapshot.models.find((m) => m.id === modelId);
+  const supportsReference = !model?.modes || model.modes.includes("reference");
+  const styleReference =
+    useStyleReference && supportsReference ? project?.style_reference_id : null;
+  const [modelOptions, setModelOptions] = useState<
+    NonNullable<GenerationRequest["model_options"]>
+  >(draft.modelOptions || {});
+  const options = model?.image_options;
+  const effectiveOptions = options
+    ? Object.fromEntries(
+        Object.entries(options).map(([key, spec]) => [
+          key,
+          modelOptions[key as keyof typeof modelOptions] ?? spec.default,
+        ]),
+      )
+    : {};
   const jobs = snapshot.jobs.filter(
     (j) =>
       j.project_id === projectId &&
@@ -164,7 +198,7 @@ export function ImageStudio({
     return () => clearTimeout(timer);
   }, [loadAssets, completedKey]);
   useEffect(() => {
-    if (snapshot.status?.temporary) return;
+    if (snapshot.status?.temporary || snapshot.status?.personal) return;
     localStorage.setItem(
       "atelier.draft." + projectId,
       JSON.stringify({
@@ -180,6 +214,7 @@ export function ImageStudio({
         gameAsset,
         batch,
         transparent,
+        modelOptions,
       }),
     );
   }, [
@@ -196,6 +231,7 @@ export function ImageStudio({
     gameAsset,
     batch,
     transparent,
+    modelOptions,
     snapshot.status?.temporary,
   ]);
   const changeModel = (id: string) => {
@@ -205,6 +241,12 @@ export function ImageStudio({
     }
     setModelId(id);
     const next = snapshot.models.find((m) => m.id === id);
+    setModelOptions({});
+    setSize((current) => Math.min(current, next?.max_size || 2048));
+    if (next?.modes && !next.modes.includes(mode)) {
+      setMode(next.modes[0]);
+      setRefs([]);
+    }
     setSteps(next?.steps || 25);
     if (!next?.transparent) setTransparent(false);
     setError("");
@@ -269,6 +311,10 @@ export function ImageStudio({
         prompt,
         use_style: useStyle,
         use_style_reference: useStyleReference,
+        ...(reusedStyle ? {
+          style_prompt_override: reusedStyle.prompt,
+          style_reference_override: reusedStyle.reference,
+        } : {}),
         game_asset: gameAsset ? normalizeGameAsset(gameAsset) : null,
         ...shape,
         seed: random
@@ -278,9 +324,13 @@ export function ImageStudio({
         batch_size: batch,
         reference_ids: mode === "t2i" ? [] : refs.map((r) => r.id),
         keep_original_aspect: !gameAsset && mode !== "t2i" && keepAspect,
+        ...(editMask && mode === "edit" && !gameAsset
+          ? { edit_mask_id: editMask.id, mask_feather: maskFeather }
+          : {}),
         transparent_background: gameAsset
           ? gameAsset.kind === "spritesheet"
           : transparent,
+        ...(options ? { model_options: effectiveOptions } : {}),
         ...(pixel
           ? { pixelation: { block_size: pixelSize, colors: pixelColors } }
           : {}),
@@ -293,21 +343,44 @@ export function ImageStudio({
       setBusy(false);
     }
   };
-  const useImage = (asset: Asset) => {
+  const useImage = (asset: Asset, asReference = false) => {
     setGameAsset(null);
     setRefs([asset]);
-    setMode("edit");
+    setMode(asReference ? "reference" : "edit");
     setUseStyleReference(false);
     setSelected(null);
-    setPrompt("");
-    promptInput.current?.focus();
-    notify("Image added as an editing reference");
+    if (!asReference) setPrompt("");
+    requestAnimationFrame(() => promptInput.current?.focus());
+    notify(asReference ? "Image added as a reference" : "Image added as an editing reference");
   };
   const reuse = async (asset: Asset) => {
     const settings = asset.metadata.settings;
-    if (!settings) return;
-    setPrompt(settings.user_prompt || settings.prompt);
+    if (!settings || reusing) return;
+    setReusing(true);
+    setBusy(true);
+    setError("");
+    const referenceIds = settings.reference_ids || [];
+    const loaded = await Promise.allSettled(referenceIds.map((id) => api<Asset>(`/assets/${id}`)));
+    const restoredRefs = loaded.flatMap((result) => result.status === "fulfilled" && !result.value.deleted ? [result.value] : []);
+    const warnings: string[] = [];
+    if (restoredRefs.length !== referenceIds.length)
+      warnings.push(t("Some original references are unavailable. The remaining references were restored; add replacements before generating."));
+    let restoredMask: Asset | null = null;
+    if (settings.edit_mask_id) {
+      try {
+        const mask = await api<Asset>(`/assets/${settings.edit_mask_id}`);
+        if (!mask.deleted && mask.metadata.source_id === restoredRefs[0]?.id) restoredMask = mask;
+      } catch { /* Keep other settings and references when a mask was removed. */ }
+      if (!restoredMask) warnings.push(t("The original mask is unavailable. Paint a new mask before editing."));
+    }
+    if (!snapshot.models.some((item) => item.id === settings.model_id && item.status === "installed"))
+      warnings.push(t("Install the original model or choose another before generating."));
+    setPrompt(settings.user_prompt ?? settings.prompt);
     setUseStyle(settings.use_style ?? false);
+    setReusedStyle(settings.style_prompt !== undefined ? {
+      prompt: settings.style_prompt,
+      reference: settings.style_reference_id || null,
+    } : null);
     setUseStyleReference(false);
     setGameAsset(
       settings.game_asset ? normalizeGameAsset(settings.game_asset) : null,
@@ -315,7 +388,9 @@ export function ImageStudio({
     if (!settings.game_asset)
       setSettingsPanel((panel) => (panel === "game" ? null : panel));
     setModelId(settings.model_id);
+    setModelOptions(settings.model_options || {});
     setSteps(settings.num_inference_steps);
+    setBatch(settings.batch_size || 1);
     setSeed(settings.seed);
     setRandom(false);
     setSize(Math.max(settings.width, settings.height));
@@ -326,18 +401,15 @@ export function ImageStudio({
     setPixel(!!settings.pixelation);
     setPixelSize(settings.pixelation?.block_size ?? 8);
     setPixelColors(settings.pixelation?.colors ?? 32);
-    try {
-      setRefs(
-        await Promise.all(
-          settings.reference_ids.map((id) => api<Asset>(`/assets/${id}`)),
-        ),
-      );
-    } catch {
-      setRefs([]);
-      setMode("t2i");
-    }
+    setRefs(restoredRefs);
+    setEditMask(restoredMask);
+    setMaskFeather(settings.mask_feather ?? 12);
+    setError(warnings.join(" "));
     setSelected(null);
-    promptInput.current?.focus();
+    setReusing(false);
+    setBusy(false);
+    requestAnimationFrame(() => promptInput.current?.focus());
+    notify(restoredRefs.length ? "Settings and references loaded" : "Settings loaded");
   };
   const normalizedTool = gameAsset ? normalizeGameAsset(gameAsset) : null;
   const gameIssue =
@@ -363,6 +435,32 @@ export function ImageStudio({
     active.length >= 4;
   return (
     <div className="image-page">
+      {maskEditor && refs[0] && (
+        <MaskEditor
+          source={refs[0]}
+          initialMask={editMask}
+          initialFeather={maskFeather}
+          strength={
+            options?.strength
+              ? {
+                  min: options.strength.min,
+                  max: options.strength.max,
+                  value: Number(effectiveOptions.strength),
+                }
+              : undefined
+          }
+          onClose={() => setMaskEditor(false)}
+          onApply={(mask, feather, strength) => {
+            setEditMask(mask);
+            setMaskFeather(feather);
+            setKeepAspect(true);
+            setMaskEditor(false);
+            if (strength !== undefined)
+              setModelOptions((current) => ({ ...current, strength }));
+            notify("Selection ready. Describe the change and generate.");
+          }}
+        />
+      )}
       {editProject && (
         <ProjectForm
           project={project}
@@ -556,6 +654,12 @@ export function ImageStudio({
                       {snapshot.models.find((m) => m.id === asset.model_id)
                         ?.name || asset.model_id}
                     </span>
+                    {!asset.deleted && asset.metadata.settings && (
+                      <button className="icon-btn" aria-label={t("Use settings")} title={t("Use settings")}
+                        disabled={reusing || busy} onClick={() => void reuse(asset)}>
+                        <RotateCcw size={16} />
+                      </button>
+                    )}
                     <button
                       className={`icon-btn ${asset.favorite ? "favorited" : ""}`}
                       aria-label={t(
@@ -589,6 +693,10 @@ export function ImageStudio({
                         <Download size={16} />
                       </a>
                     )}
+                    <button className="icon-btn danger"
+                      aria-label={t(asset.deleted ? "Delete permanently" : "Move to trash")}
+                      title={t(asset.deleted ? "Delete permanently" : "Move to trash")}
+                      onClick={() => setDeleteTarget(asset)}><Trash2 size={16} /></button>
                   </div>
                 </div>
               </article>
@@ -645,26 +753,33 @@ export function ImageStudio({
                 { id: "edit", name: "Edit", icon: Pencil },
                 { id: "reference", name: "References", icon: Link },
               ] as const
-            ).map(({ id, name, icon: Icon }) => (
-              <button
-                key={id}
-                type="button"
-                role="tab"
-                aria-selected={
-                  (styleReference && mode !== "edit" ? "reference" : mode) ===
-                  id
-                }
-                className={
-                  (styleReference && mode !== "edit" ? "reference" : mode) ===
-                  id
-                    ? "active"
-                    : ""
-                }
-                onClick={() => changeMode(id)}
-              >
-                <Icon size={17} /> {t(name)}{" "}
-              </button>
-            ))}
+            )
+              .filter(({ id }) => !model?.modes || model.modes.includes(id))
+              .map(({ id, name, icon: Icon }) => (
+                <button
+                  key={id}
+                  type="button"
+                  role="tab"
+                  aria-selected={
+                    (styleReference && mode !== "edit" ? "reference" : mode) ===
+                    id
+                  }
+                  className={
+                    (styleReference && mode !== "edit" ? "reference" : mode) ===
+                    id
+                      ? "active"
+                      : ""
+                  }
+                  onClick={() => changeMode(id)}
+                >
+                  <Icon size={17} />{" "}
+                  {t(
+                    id === "edit" && model?.edit_kind === "img2img"
+                      ? "Redraw"
+                      : name,
+                  )}{" "}
+                </button>
+              ))}
           </div>
           <div className={`composer-options${gameAsset ? " has-game" : ""}`}>
             <GameToolSelect
@@ -753,6 +868,31 @@ export function ImageStudio({
             </p>
           </div>
         ) : null}
+        {mode === "edit" && refs.length === 1 && !gameAsset && (
+          <div className="masked-edit-tools">
+            <button
+              type="button"
+              className="secondary"
+              disabled={busy}
+              onClick={() => setMaskEditor(true)}
+            >
+              <Pencil size={15} />
+              {t(editMask ? "Adjust selection" : "Paint area to edit")}
+            </button>
+            {editMask && (
+              <>
+                <span>{t("Only the selected area will change")}</span>
+                <button
+                  type="button"
+                  className="quiet"
+                  onClick={() => setEditMask(null)}
+                >
+                  {t("Remove selection")}
+                </button>
+              </>
+            )}
+          </div>
+        )}
         <textarea
           ref={promptInput}
           aria-label={t("Image prompt")}
@@ -818,14 +958,14 @@ export function ImageStudio({
             <select
               aria-label={t("Aspect ratio")}
               value={gameAsset ? "1:1" : ratio}
-              disabled={!!gameAsset || (mode !== "t2i" && keepAspect)}
+              disabled={!!gameAsset || (mode !== "t2i" && (keepAspect || !!editMask))}
               onChange={(e) => setRatio(e.target.value)}
             >
               {["1:1", "4:3", "3:4", "16:9", "9:16"].map((r) => (
-                <option key={r}> {t(r)} </option>
+                <option key={r} value={r}> {t(r)} </option>
               ))}
               {!["1:1", "4:3", "3:4", "16:9", "9:16"].includes(ratio) ? (
-                <option> {t(ratio)} </option>
+                <option value={ratio}> {t(ratio)} </option>
               ) : null}
             </select>
           </label>
@@ -838,9 +978,14 @@ export function ImageStudio({
               onChange={(e) => setSize(Number(e.target.value))}
             >
               {size === 512 && <option value={512}>512</option>}
+              {![512, 1024, 1536, 2048].includes(size) && <option value={size}>{size}</option>}
               <option value={1024}>1K</option>
-              <option value={1536}>1.5K</option>
-              <option value={2048}>2K</option>
+              <option value={1536} disabled={(model?.max_size || 2048) < 1536}>
+                1.5K
+              </option>
+              <option value={2048} disabled={(model?.max_size || 2048) < 2048}>
+                2K
+              </option>
             </select>
           </label>
           <label>
@@ -974,7 +1119,7 @@ export function ImageStudio({
                     />
                     {t("Project style")}
                   </label>
-                  {project?.style_reference_id && (
+                  {project?.style_reference_id && supportsReference && (
                     <label className="check-label">
                       <input
                         type="checkbox"
@@ -990,10 +1135,21 @@ export function ImageStudio({
                   {styleReference && mode !== "edit"
                     ? t("References mode will be used")
                     : useStyle
-                      ? project?.style_prompt ||
+                      ? (reusedStyle?.prompt ?? project?.style_prompt) ||
                         t("Use project or global art direction")
                       : t("Style prompt disabled for this image")}
                 </p>
+                {reusedStyle && <div>
+                  <small>{t("Using the original generation’s style settings.")}</small>
+                  <button className="quiet" type="button" onClick={() => {
+                    if (reusedStyle.reference) {
+                      const remaining = refs.filter((ref) => ref.id !== reusedStyle.reference);
+                      setRefs(remaining);
+                      if (mode === "reference" && !remaining.length && !project?.style_reference_id) setMode("t2i");
+                    }
+                    setReusedStyle(null); setUseStyleReference(true);
+                  }}>{t("Use current project style")}</button>
+                </div>}
                 <button
                   className="quiet"
                   type="button"
@@ -1025,6 +1181,72 @@ export function ImageStudio({
           onClose={() => setAdvanced(false)}
         >
           <div className="dialog-body settings-dialog advanced-dialog">
+            {options && (
+              <fieldset className="plugin-image-options form-stack">
+                <legend>{t("Model controls")}</legend>
+                {options.strength && mode === "edit" && (
+                  <label>
+                    {t("Redraw strength")} ·{" "}
+                    {Number(effectiveOptions.strength).toFixed(2)}
+                    <input
+                      aria-label={t("Redraw strength")}
+                      type="range"
+                      min={options.strength.min}
+                      max={options.strength.max}
+                      step="0.05"
+                      value={Number(effectiveOptions.strength)}
+                      onChange={(e) =>
+                        setModelOptions((current) => ({
+                          ...current,
+                          strength: Number(e.target.value),
+                        }))
+                      }
+                    />
+                    <small>
+                      {t(
+                        "Lower values keep more of the original. Describe the finished image in your prompt.",
+                      )}
+                    </small>
+                  </label>
+                )}
+                {options.guidance && (
+                  <label>
+                    {t("Prompt guidance")}
+                    <input
+                      aria-label={t("Prompt guidance")}
+                      type="number"
+                      min={options.guidance.min}
+                      max={options.guidance.max}
+                      step="0.5"
+                      value={Number(effectiveOptions.guidance)}
+                      onChange={(e) =>
+                        setModelOptions((current) => ({
+                          ...current,
+                          guidance: Number(e.target.value),
+                        }))
+                      }
+                    />
+                  </label>
+                )}
+                {options.negative_prompt && (
+                  <label>
+                    {t("Negative prompt")}
+                    <textarea
+                      aria-label={t("Negative prompt")}
+                      maxLength={4000}
+                      rows={3}
+                      value={String(effectiveOptions.negative_prompt)}
+                      onChange={(e) =>
+                        setModelOptions((current) => ({
+                          ...current,
+                          negative_prompt: e.target.value,
+                        }))
+                      }
+                    />
+                  </label>
+                )}
+              </fieldset>
+            )}
             <label>
               {" "}
               {t("Seed")}{" "}
@@ -1049,16 +1271,19 @@ export function ImageStudio({
             <p>
               {" "}
               {t(
-                modelId === "hidream-o1"
-                  ? "HiDream renders at its training scale, then exports at your selected size."
-                  : "Start at 1K and 25 steps on a 16 GB GPU.",
+                model?.plugin_id
+                  ? "Start at 1K with this model's default steps."
+                  : modelId === "hidream-o1"
+                    ? "HiDream renders at its training scale, then exports at your selected size."
+                    : "Start at 1K and 25 steps on a 16 GB GPU.",
               )}{" "}
             </p>
             {!gameAsset && mode !== "t2i" ? (
               <label className="check-label">
                 <input
                   type="checkbox"
-                  checked={keepAspect}
+                  checked={keepAspect || !!editMask}
+                  disabled={!!editMask}
                   onChange={(e) => setKeepAspect(e.target.checked)}
                 />{" "}
                 {t("Keep reference aspect")}{" "}
@@ -1136,6 +1361,15 @@ export function ImageStudio({
             </div>
             <div className="detail-info">
               <h3>{selected.name}</h3>
+              <div className="detail-primary-actions">
+                <button className="primary" onClick={() => void reuse(selected)}
+                  disabled={reusing || busy || !selected.metadata.settings || !!selected.deleted}>
+                  {reusing ? <LoaderCircle size={16} className="spin" /> : <RotateCcw size={16} />}
+                  {t("Use settings")}
+                </button>
+                {supportsReference && <button className="secondary" disabled={!!selected.deleted || busy}
+                  onClick={() => useImage(selected, true)}><Link size={16} />{t("Use as reference")}</button>}
+              </div>
               {!!selected.metadata.game_asset && (
                 <button
                   className="secondary"
@@ -1148,7 +1382,7 @@ export function ImageStudio({
                   {t("Open game asset workshop")}{" "}
                 </button>
               )}
-              {!snapshot.status?.temporary && (
+              {!snapshot.status?.temporary && !selected.deleted && (
                 <button
                   className="secondary"
                   onClick={async () => {
@@ -1256,13 +1490,6 @@ export function ImageStudio({
                     </a>
                   </>
                 )}
-                <button
-                  className="secondary"
-                  onClick={() => void reuse(selected)}
-                  disabled={!selected.metadata.settings || !!selected.deleted}
-                >
-                  <RotateCcw size={16} /> {t("Reuse settings")}{" "}
-                </button>
                 <a
                   className="quiet"
                   href={`/api/assets/${selected.id}/metadata`}
@@ -1274,16 +1501,15 @@ export function ImageStudio({
                 <button
                   className="quiet danger"
                   onClick={() => {
-                    void updateAsset(selected, {
-                      deleted: !selected.deleted,
-                    }).then((ok) => {
+                    if (!selected.deleted) {
+                      setDeleteTarget(selected);
+                      setSelected(null);
+                      return;
+                    }
+                    void updateAsset(selected, { deleted: false }).then((ok) => {
                       if (ok) {
                         setSelected(null);
-                        notify(
-                          selected.deleted
-                            ? "Image restored"
-                            : "Image moved to trash",
-                        );
+                        notify("Image restored");
                       }
                     });
                   }}
@@ -1295,11 +1521,23 @@ export function ImageStudio({
                   )}{" "}
                   {t(selected.deleted ? "Restore image" : "Move to trash")}{" "}
                 </button>
+                {!!selected.deleted && <button className="quiet danger" onClick={() => {
+                  setDeleteTarget(selected); setSelected(null);
+                }}><Trash2 size={16} />{t("Delete permanently")}</button>}
               </div>
             </div>
           </div>
         </Modal>
       ) : null}
+      {deleteTarget && <AssetDeleteDialog asset={deleteTarget} onClose={() => setDeleteTarget(null)}
+        onDeleted={(asset) => {
+          setDeleteTarget(null);
+          setSelected(null);
+          setAssets((items) => items.filter((item) => item.id !== asset.id));
+          setRefs((items) => items.filter((item) => item.id !== asset.id));
+          void loadAssets(); void refresh();
+          notify(asset.deleted ? "Generation deleted permanently" : "Generation moved to Trash");
+        }} />}
     </div>
   );
 }

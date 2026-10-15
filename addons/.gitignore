@@ -1,0 +1,3 @@
+# Keep extension sources, model configuration, runtimes and weights private.
+*
+!.gitignore

@@ -20,9 +20,15 @@ import {
   Menu,
   X,
   Star,
+  LockKeyhole,
 } from "lucide-react";
+import {
+  PersonalBar,
+  PersonalDialog,
+  type PersonalAction,
+} from "./PersonalSpace";
 import { TemporaryMode } from "./TemporaryMode";
-import { api } from "./api";
+import { api, post, setWorkspace } from "./api";
 import { Brand, Loading } from "./ui";
 import { Home } from "./Home";
 import { Projects, ProjectForm } from "./Projects";
@@ -51,6 +57,9 @@ export default function App() {
   const [newProject, setNewProject] = useState(false);
   const [mobileNav, setMobileNav] = useState(false);
   const [notice, setNotice] = useState("");
+  const [personalDialog, setPersonalDialog] = useState<PersonalAction | null>(
+    null,
+  );
   const loadVersion = useRef(0);
   const navigationVersion = useRef(0);
   const load = useCallback(async () => {
@@ -63,6 +72,13 @@ export default function App() {
         api<Status>("/status"),
       ]);
       if (version !== loadVersion.current) return;
+      setWorkspace(
+        status.personal
+          ? "personal"
+          : status.temporary
+            ? "temporary"
+            : "public",
+      );
       setSnapshot({ projects, models, jobs, status });
       setError("");
     } catch (e) {
@@ -73,13 +89,55 @@ export default function App() {
     }
   }, []);
   useEffect(() => {
+    const clearPrivateScreen = () => {
+      ++loadVersion.current;
+      ++navigationVersion.current;
+      setSnapshot({ projects: [], models: [], jobs: [], status: null });
+      setNewProject(false);
+      setPersonalDialog(null);
+      setNotice("");
+      setRoute("/settings");
+      setProjectId("inbox");
+    };
+    window.addEventListener("atelier-space-locked", clearPrivateScreen);
+    return () =>
+      window.removeEventListener("atelier-space-locked", clearPrivateScreen);
+  }, []);
+  const spaceChanged = async (entered: boolean) => {
+    ++loadVersion.current;
+    ++navigationVersion.current;
+    setWorkspace(undefined);
+    setSnapshot({ projects: [], models: [], jobs: [], status: null });
+    setNewProject(false);
+    setNotice("");
+    setProjectId("inbox");
+    setMobileNav(false);
+    const path = entered ? "/images" : "/settings";
+    history.replaceState(null, "", path);
+    setRoute(path);
+    await load();
+  };
+  const lockPersonal = async () => {
+    await post("/personal/lock");
+    await spaceChanged(false);
+  };
+  useEffect(() => {
     let stopped = false;
     let timer: ReturnType<typeof setTimeout>;
     const poll = async () => {
       await load();
       if (!stopped) timer = setTimeout(poll, 2500);
     };
-    void poll();
+    // A fresh document is a new session, including restored browser tabs.
+    // Do not fetch a private gallery using a cookie restored by the browser.
+    void post("/personal/lock")
+      .then(() => {
+        setWorkspace(undefined);
+        if (!stopped) void poll();
+      })
+      .catch(() => {
+        if (!stopped) void poll();
+      });
     return () => {
       stopped = true;
       clearTimeout(timer);
@@ -108,11 +166,13 @@ export default function App() {
     const destination = new URL(path, location.origin);
     if (project) destination.searchParams.set("project", project);
     const selectedProject = destination.searchParams.get("project");
-    history.pushState(null, "", destination.pathname + destination.search);
+    if (snapshot.status?.personal)
+      history.replaceState(null, "", destination.pathname + destination.search);
+    else history.pushState(null, "", destination.pathname + destination.search);
     setRoute(destination.pathname);
     if (selectedProject) {
       setProjectId(selectedProject);
-      if (!snapshot.status?.temporary)
+      if (!snapshot.status?.temporary && !snapshot.status?.personal)
         localStorage.setItem("atelier.project", selectedProject);
     }
     setMobileNav(false);
@@ -142,7 +202,7 @@ export default function App() {
   const pickProject = (id: string) => {
     ++navigationVersion.current;
     setProjectId(id);
-    if (!snapshot.status?.temporary)
+    if (!snapshot.status?.temporary && !snapshot.status?.personal)
       localStorage.setItem("atelier.project", id);
     history.replaceState(null, "", `${route}?project=${id}`);
   };
@@ -241,6 +301,21 @@ export default function App() {
           </div>
         ) : null}
         <div className="sidebar-foot">
+          <button
+            className="personal-nav"
+            disabled={!snapshot.status || snapshot.status.temporary}
+            onClick={() => {
+              if (snapshot.status?.personal) navigate("/settings");
+              else
+                setPersonalDialog(
+                  snapshot.status?.personal_configured ? "unlock" : "setup",
+                );
+              setMobileNav(false);
+            }}
+          >
+            <LockKeyhole size={19} strokeWidth={1.7} />
+            {t("Personal space")}
+          </button>
           <LanguageSwitch />
           <div
             className="gpu-small"
@@ -274,8 +349,21 @@ export default function App() {
           </a>
         </div>
       </aside>
-      <main className={`main ${route === "/images" ? "studio-main" : ""}`}>
-        <TemporaryMode snapshot={snapshot} changed={load} />
+      <main
+        key={String(snapshot.status?.personal)}
+        className={`main ${route === "/images" ? "studio-main" : ""}`}
+      >
+        {snapshot.status?.personal ? (
+          <PersonalBar onLock={lockPersonal} />
+        ) : (
+          <TemporaryMode
+            snapshot={snapshot}
+            changed={async () => {
+              setWorkspace(undefined);
+              await load();
+            }}
+          />
+        )}
         {snapshot.status?.cleanup_error && (
           <p className="error-banner" role="alert">
             {" "}
@@ -344,7 +432,13 @@ export default function App() {
         ) : route === "/models" ? (
           <ModelLibrary snapshot={snapshot} refresh={load} notify={notify} />
         ) : route === "/settings" ? (
-          <Settings snapshot={snapshot} refresh={load} notify={notify} />
+          <Settings
+            snapshot={snapshot}
+            refresh={load}
+            notify={notify}
+            onPersonal={setPersonalDialog}
+            onLock={lockPersonal}
+          />
         ) : (
           <div className="empty">
             <h1> {t("Page not found")} </h1>
@@ -385,6 +479,19 @@ export default function App() {
           }}
         />
       ) : null}
+      {personalDialog && (
+        <PersonalDialog
+          mode={personalDialog}
+          onClose={() => setPersonalDialog(null)}
+          onComplete={async (entered) => {
+            if (entered) await spaceChanged(true);
+            else {
+              notify("Personal password changed");
+              await load();
+            }
+          }}
+        />
+      )}
     </div>
   );
 }

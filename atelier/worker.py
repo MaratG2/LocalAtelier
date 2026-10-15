@@ -68,6 +68,9 @@ def main():
                 params = dict(prompt=data["prompt"], width=width, height=height, seed=data["seed"], references=refs,
                               callback=lambda step,total:events.put({"type":"progress","step":step,"total":total}),
                               num_inference_steps=data["num_inference_steps"], transparent_background=data.get("transparent_background", False))
+                if data.get('edit_mask_b64'):
+                    with Image.open(io.BytesIO(base64.b64decode(data['edit_mask_b64'], validate=True))) as mask:
+                        params['edit_mask'] = mask.convert('L')
                 if args.model == "qwen-image-2.1":
                     image = backend.generate(**params)
                     metadata = {}

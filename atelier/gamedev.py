@@ -99,7 +99,7 @@ def export_bundle(store, asset, layout=None, options=None, preview=False):
     if offsets is not None and (not isinstance(offsets, list) or len(offsets) != count or any(
             not isinstance(pair, list) or len(pair) != 2 or any(type(v) is not int or abs(v) > tool['cell_size'] for v in pair) for pair in offsets)):
         raise ValueError('Frame offsets must stay within one export cell')
-    with Image.open(store.assets / asset['filename']) as source:
+    with Image.open(store.open_media(asset['filename'])) as source:
         atlas = atlas_image(source, tool, bool(asset['metadata'].get('pixelation')), offsets)
     if preview:
         return b'', atlas

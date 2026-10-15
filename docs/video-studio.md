@@ -57,7 +57,9 @@ data/runtime/vdn-h3.log            latest coordinator log
 
 FreeVideo is pinned to `0af617eb54dec1d8c06f9e7de2147c5b6a3f4772`; OpenVDN to `30b6b380c2482f3519469350810c2955d8847fd9`; the patched Diffusers tree is `37068ab7331d8b28f4cf718dba7015c742a306d2`; the encoder library is `421a1c245c682c04d4325ba365f40c834c66f5b0`. The complete weight manifest is `atelier/manifests/vdn-h3.json`. Model and environment directories are excluded from Git.
 
-The worker uses adaptive memory placement and weight streaming. It does not change the Windows pagefile, kill other applications or silently lower the requested geometry. Native worker progress is displayed by stage; this is not an elapsed-time forecast. Runtime errors remain visible in job history and Settings logs.
+H3 keeps a session-owned FreeVideo resident worker between successful generations, including in personal space and incognito. The per-request coordinator still runs memory guards and saves diagnostics, while compatible encoder, transformer and decoder models can be reused. Switching models or workspaces, locking/leaving a private session, cancellation, errors, or enabling **Unload after generation** releases the worker. Personal-space outputs are sealed after each job; keeping weights loaded does not keep unencrypted output files.
+
+The worker uses adaptive memory placement and weight streaming. On a 16 GB GPU it may still evict individual components to make room for encoding, sampling or decoding; changes to geometry or execution settings can also invalidate a cached model. Worker reuse removes the forced whole-process reload after every clip, but does not promise every component always fits in VRAM. Progress distinguishes an actual cached video-model reuse from session reuse. It does not change the Windows pagefile, kill other applications or silently lower the requested geometry. Native worker progress is displayed by stage; this is not an elapsed-time forecast. Runtime errors remain visible in job history and Settings logs.
 
 ## License
 

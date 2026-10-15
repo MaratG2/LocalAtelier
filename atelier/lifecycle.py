@@ -46,7 +46,7 @@ def idle_reason(app):
     if any(op['status'] == 'running' for op in models.operations.values()):
         return 'Waiting for model operations to finish'
     if store.sessions:
-        return 'Waiting for incognito sessions to end; download temporary results first'
+        return 'Waiting for private sessions to end; lock personal space or finish incognito first'
     return None
 
 

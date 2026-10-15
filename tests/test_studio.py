@@ -20,6 +20,8 @@ from atelier.runtime import Runtime
 
 class FakeRuntime:
     def __init__(self, store):
+        self.store = store
+        self.worker_root = None
         self.active_model = None
         self.phase = 'Idle'
         self.calls = []
@@ -29,6 +31,7 @@ class FakeRuntime:
 
     def generate(self, request, refs, callback):
         self.calls.append((request, refs))
+        self.worker_root = self.store.root / 'runtime'
         self.active_model = request['model_id']
         callback('Rendering', 50)
         self.gate.wait(10)
@@ -37,6 +40,12 @@ class FakeRuntime:
     def release(self, model_id=None):
         self.releases.append(model_id)
         self.active_model = None
+        self.worker_root = None
+
+    def release_session(self, session_root):
+        if self.worker_root == session_root / 'runtime':
+            self.release()
+        return True
 
     def logs(self):
         return {}

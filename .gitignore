@@ -5,6 +5,13 @@
 .design/
 .impeccable/review/
 .env
+.env.*
+!.env.example
+!.env.sample
+.credentials/
+*.sqlite3
+*.sqlite3-wal
+*.sqlite3-shm
 __pycache__/
 *.py[cod]
 node_modules/
@@ -15,3 +22,7 @@ frontend/vite.config.d.ts
 *.log
 *.safetensors
 *.gguf
+
+# Local extensions are maintained independently of this repository.
+/addons/*
+!/addons/.gitignore

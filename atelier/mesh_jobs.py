@@ -70,7 +70,7 @@ def run_mesh_job(queue, job_id, request, callback):
     try:
         if request["mode"] == "simplify":
             source = store.asset(request["source_mesh_id"])
-            path = store.assets / source["filename"]
+            path = store.input_path(source["filename"])
             metadata = {**source["metadata"], "parent_asset_id": source["id"], "operation": "simplify"}
             name = source["name"][:65] + " · simplified"
         else:
@@ -88,7 +88,7 @@ def run_mesh_job(queue, job_id, request, callback):
                 store.update_job(job_id, result_ids=json.dumps(refs), request=json.dumps(request))
             if cancelled():
                 raise MeshCancelled()
-            reference = store.assets / store.asset(refs[0])["filename"]
+            reference = store.input_path(store.asset(refs[0])["filename"])
             # Runtime method is replaceable for isolated tests; production invokes native CUDA.
             mesh_progress = (lambda phase, percent: callback(phase, 20 + round(percent * .8))) if request["mode"] == "text-to-3d" else callback
             path, metadata = runtime.generate_mesh(request, reference, mesh_progress, cancelled)

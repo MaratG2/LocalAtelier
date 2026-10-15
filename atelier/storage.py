@@ -1,5 +1,7 @@
 import contextlib
+import io
 import json
+import re
 import sqlite3
 import time
 import uuid
@@ -16,6 +18,61 @@ def now():
 
 
 class Store:
+    personal = False
+
+    def read_file(self, name):
+        return (self.assets / name).read_bytes()
+
+    def open_media(self, name):
+        return io.BytesIO(self.read_file(name)) if self.personal else self.assets / name
+
+    def write_image(self, name, image, format='PNG', **options):
+        buffer = io.BytesIO()
+        image.save(buffer, format=format, **options)
+        self.write_file(name, buffer.getvalue())
+
+    def write_file(self, name, data):
+        path = self.assets / name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(data)
+
+    def file_exists(self, name):
+        return (self.assets / name).is_file()
+
+    def remove_asset_files(self, asset_id):
+        """Delete only the files owned by this generated UUID, never references."""
+        if not re.fullmatch(r'[0-9a-f]{32}', asset_id):
+            raise ValueError('Invalid asset identifier')
+        from .vault import remove_work_tree
+        parent = self.assets.resolve()
+        if not parent.is_relative_to(self.root) or self.assets.is_symlink():
+            raise ValueError('Invalid asset directory')
+        paths = [self.assets / name for name in
+                 (asset_id + '.png', asset_id + '-thumb.png', asset_id + '.json', asset_id)]
+        for path in paths:
+            if path.is_symlink() or not path.resolve().is_relative_to(parent):
+                raise ValueError('Invalid asset file path')
+        for path in paths:
+            if path.is_dir():
+                remove_work_tree(path, parent)
+            else:
+                path.unlink(missing_ok=True)
+
+    def input_path(self, name):
+        return self.assets / name
+
+    def output_folder(self, name):
+        folder = self.assets / name
+        folder.mkdir()
+        return folder
+
+    def seal_folder(self, name):
+        """Persist a completed native output directory (ordinary stores already do)."""
+
+    @contextlib.contextmanager
+    def file_scope(self):
+        yield
+
     def __init__(self, root, memory=False):
         self.root = Path(root).resolve()
         self.memory = memory

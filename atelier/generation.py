@@ -6,7 +6,7 @@ from pathlib import Path
 from PIL import Image
 from PIL.PngImagePlugin import PngInfo
 
-from .catalog import CATALOG
+from .plugins import catalog_for, validate_options
 from .pixelation import pixelate, validate_pixelation
 from .storage import identifier, now
 
@@ -25,7 +25,8 @@ def validate(data, store):
     data, style = apply_style(data, store)
     tool = validate_tool(data.pop('game_asset', None))
     pixelation = validate_pixelation(data.pop('pixelation', None))
-    allowed = {"project_id", "model_id", "mode", "prompt", "width", "height", "seed", "num_inference_steps", "batch_size", "reference_ids", "keep_original_aspect", "transparent_background"}
+    options = data.pop('model_options', None)
+    allowed = {"project_id", "model_id", "mode", "prompt", "width", "height", "seed", "num_inference_steps", "batch_size", "reference_ids", "keep_original_aspect", "transparent_background", "edit_mask_id", "mask_feather"}
     if set(data) - allowed:
         raise ValueError("Unsupported generation settings")
     if not isinstance(data.get("project_id", "inbox"), str):
@@ -34,15 +35,18 @@ def validate(data, store):
     if not project or project["archived"]:
         raise ValueError("Select an active project")
     model_id = data.get("model_id")
-    if not isinstance(model_id, str) or model_id not in CATALOG or CATALOG[model_id]["service"] != "images":
+    catalog = catalog_for(store)
+    if not isinstance(model_id, str) or model_id not in catalog or catalog[model_id]["service"] != "images":
         raise ValueError("Select a supported image model")
-    model = CATALOG[model_id]
+    model = catalog[model_id]
     prompt = data.get("prompt", "")
     if not isinstance(style['user_prompt'], str) or not style['user_prompt'].strip() or len(style['user_prompt']) > 12000:
         raise ValueError("Describe your image using 1–12,000 characters")
     mode = data.get("mode", "t2i")
     if not isinstance(mode, str) or mode not in {"t2i", "edit", "reference"}:
         raise ValueError("Unknown generation mode")
+    if mode not in model.get('modes', ['t2i', 'edit', 'reference']):
+        raise ValueError('This model does not support the selected image mode')
     refs = data.get("reference_ids", [])
     if not isinstance(refs, list) or len(refs) > model["max_references"] or any(not isinstance(r, str) for r in refs):
         raise ValueError(f"Use up to {model['max_references']} reference images")
@@ -53,6 +57,9 @@ def validate(data, store):
         if not asset or asset["deleted"] or asset["kind"] not in {"generated", "reference"}:
             raise ValueError("A reference image is unavailable")
     request = {"project_id": project["id"], "model_id": model_id, "mode": mode, "prompt": prompt.strip(), "reference_ids": refs}
+    validated_options = validate_options(model, options)
+    if validated_options:
+        request['model_options'] = validated_options
     for name, default, low, high in [("width", 1024, 512, model["max_size"]), ("height", 1024, 512, model["max_size"]),
                                     ("seed", 42, 0, 4294967295), ("num_inference_steps", model["steps"], 1, model["max_steps"]), ("batch_size", 1, 1, 4)]:
         request[name] = integer(data.get(name, default), name, low, high)
@@ -77,6 +84,14 @@ def validate(data, store):
         raise ValueError("This model does not support native transparency")
     if mode == "t2i" and request["keep_original_aspect"]:
         raise ValueError("Aspect preservation requires a reference")
+    if data.get('edit_mask_id') is not None:
+        mask_id = data['edit_mask_id']
+        mask = store.asset(mask_id) if isinstance(mask_id, str) else None
+        if mode != 'edit' or tool:
+            raise ValueError('Use Edit mode with one source image for masked editing.')
+        if not mask or mask['deleted'] or mask['kind'] != 'mask' or mask['metadata'].get('source_id') != refs[0]:
+            raise ValueError('This mask belongs to a different or unavailable image. Paint a new mask.')
+        request.update(edit_mask_id=mask_id, mask_feather=integer(data.get('mask_feather', 12), 'Edge softness', 0, 64), keep_original_aspect=True)
     request.update(style)
     if pixelation:
         request['pixelation'] = pixelation
@@ -106,14 +121,14 @@ def save_image(store, image, project_id, *, kind, name, prompt="", model_id=None
     metadata = metadata or {}
     info = PngInfo()
     info.add_text("local_atelier", json.dumps({**metadata, "prompt": prompt, "model_id": model_id}))
-    image.save(store.assets / filename, format="PNG", pnginfo=info)
+    store.write_image(filename, image, pnginfo=info)
     small = image.copy()
     if metadata.get('pixelation'):
         small.thumbnail((512, 512), resample=Image.Resampling.NEAREST)
     else:
         small.thumbnail((512, 512))
-    small.save(store.assets / thumbnail, format="PNG")
-    (store.assets / (asset_id + ".json")).write_text(json.dumps({**metadata, "prompt": prompt, "model_id": model_id}, indent=2), encoding="utf-8")
+    store.write_image(thumbnail, small)
+    store.write_file(asset_id + '.json', json.dumps({**metadata, 'prompt': prompt, 'model_id': model_id}, indent=2).encode('utf-8'))
     store.execute("INSERT INTO assets(id,project_id,kind,filename,thumbnail,name,prompt,model_id,width,height,seed,metadata,created) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)",
                   (asset_id, project_id, kind, filename, thumbnail, name, prompt, model_id, image.width, image.height, seed, json.dumps(metadata), now()))
     store.execute("UPDATE projects SET updated=? WHERE id=?", (now(), project_id))
@@ -130,6 +145,10 @@ class GenerationQueue:
         threading.Thread(target=self._work, daemon=True).start()
 
     def submit(self, data, mesh=False, video=False):
+        with self.models.lock, self.lock:
+            return self._submit(data, mesh, video)
+
+    def _submit(self, data, mesh=False, video=False):
         if video:
             from .videos import validate_video
             request = validate_video(data, self.store)
@@ -138,26 +157,30 @@ class GenerationQueue:
             request = validate_mesh(data, self.store)
         else:
             request = validate(data, self.store)
-        with self.models.lock, self.lock:
-            if not self.accepting:
-                raise ValueError('Local Atelier is updating. Try again in a moment.')
-            required = [] if request["mode"] == "simplify" else [request["model_id"]]
-            if request.get("image_model_id"):
-                required.append(request["image_model_id"])
-            for model_id in required:
-                if self.models.busy(model_id):
-                    raise ValueError("Wait for this model's installation or verification to finish")
-                record = self.models.record(model_id)
-                if not record or not record['verified']:
-                    raise ValueError(f"Install and verify {CATALOG[model_id]['name']} first")
-            count = self.store.one("SELECT COUNT(*) AS count FROM jobs WHERE status IN ('queued','running')")["count"]
-            if count >= 4:
-                raise ValueError("The queue is full. Wait for a generation to finish")
-            job_id = identifier()
-            self.store.execute("INSERT INTO jobs(id,project_id,model_id,status,phase,total,request,created,updated) VALUES(?,?,?,'queued','Queued',?,?,?,?)",
-                               (job_id, request["project_id"], request["model_id"], request["batch_size"], json.dumps(request), now(), now()))
-            self.queue.put((job_id, self.store.context.get() if hasattr(self.store, 'context') else None))
-            return self.store.job(job_id)
+        if not self.accepting:
+            raise ValueError('Local Atelier is updating. Try again in a moment.')
+        required = [] if request["mode"] == "simplify" else [request["model_id"]]
+        if request.get("image_model_id"):
+            required.append(request["image_model_id"])
+        for model_id in required:
+            if self.models.busy(model_id):
+                raise ValueError("Wait for this model's installation or verification to finish")
+            record = self.models.record(model_id)
+            if not record or not record['verified']:
+                raise ValueError(f"Install and verify {catalog_for(self.store)[model_id]['name']} first")
+            model = catalog_for(self.store)[model_id]
+            if model.get('plugin_id'):
+                from .models import installed
+                if not installed(model, record['runtime_path']):
+                    raise ValueError('Install and verify this plugin model first')
+        count = self.store.one("SELECT COUNT(*) AS count FROM jobs WHERE status IN ('queued','running')")["count"]
+        if count >= 4:
+            raise ValueError("The queue is full. Wait for a generation to finish")
+        job_id = identifier()
+        self.store.execute("INSERT INTO jobs(id,project_id,model_id,status,phase,total,request,created,updated) VALUES(?,?,?,'queued','Queued',?,?,?,?)",
+                           (job_id, request["project_id"], request["model_id"], request["batch_size"], json.dumps(request), now(), now()))
+        self.queue.put((job_id, self.store.context.get() if hasattr(self.store, 'context') else None))
+        return self.store.job(job_id)
 
     def cancel(self, job_id):
         job = self.store.job(job_id)
@@ -184,6 +207,8 @@ class GenerationQueue:
                         continue
                     current.working = True
             context = self.store.context.set(session) if hasattr(self.store, 'context') else None
+            files = self.store.file_scope()
+            files.__enter__()
             results = []
             try:
                 job = self.store.job(job_id)
@@ -207,7 +232,7 @@ class GenerationQueue:
                     asset = run_mesh_job(self, job_id, request, mesh_progress)
                     self.store.update_job(job_id, completed=1, result_ids=json.dumps([asset["id"]]), status="complete", phase="Complete", progress=100)
                     continue
-                refs = [self.store.assets / self.store.asset(ref)["filename"] for ref in request["reference_ids"]]
+                refs = [self.store.input_path(self.store.asset(ref)["filename"]) for ref in request["reference_ids"]]
                 for index in range(request["batch_size"]):
                     if job_id in self.cancelled:
                         break
@@ -225,6 +250,10 @@ class GenerationQueue:
                     if request.get('pixelation'):
                         progress('Applying pixel finish', 99)
                         image, metadata['pixelation'] = pixelate(image, request['pixelation'])
+                    if request.get('edit_mask_id'):
+                        from .masking import composite_edit
+                        progress('Blending the selected area', 99)
+                        image, metadata['masked_edit'] = composite_edit(self.store, request, image)
                     metadata.update(reference_ids=request["reference_ids"], settings={**request, "seed": seed}, job_id=job_id, game_asset=request.get('game_asset'), style_prompt=request.get('style_prompt'), style_reference_id=request.get('style_reference_id'))
                     user_prompt = request.get('user_prompt', request['prompt'])
                     asset = save_image(self.store, image, request["project_id"], kind="generated", name=user_prompt[:80],
@@ -234,11 +263,21 @@ class GenerationQueue:
                 status = "cancelled" if job_id in self.cancelled else "complete"
                 self.store.update_job(job_id, status=status, phase="Stopped" if status == "cancelled" else "Complete", progress=100 if status == "complete" else self.store.job(job_id)["progress"])
             except Exception as error:
+                self.runtime.release()
                 stopped = job_id in self.cancelled
                 self.store.update_job(job_id, status="cancelled" if stopped else "error", phase="Stopped" if stopped else "Generation failed", error=None if stopped else str(error)[:3000])
             finally:
-                if session or self.store.setting("unload_after_job", False):
+                if self.store.setting("unload_after_job", False) or (session and self.store.current.closed):
                     self.runtime.release()
+                try:
+                    files.__exit__(None, None, None)
+                    if getattr(self.store, 'personal', False) and not self.runtime.active_model:
+                        self.store.current.clear_work()
+                except OSError:
+                    self.runtime.release()
+                    self.store.cleanup_error = 'Temporary file cleanup is pending. Close the studio workers and restart to retry.'
+                    if getattr(self.store, 'personal', False):
+                        self.store.current.pending_runtime_cleanup = True
                 if session:
                     self.store.current.working = False
                 if context is not None:

@@ -32,8 +32,8 @@ def validate_video(data, store):
         source = store.asset(source_id) if isinstance(source_id, str) else None
         if not source or source['deleted'] or source['kind'] != 'video' or not source['metadata'].get('preview') or source['model_id'] != 'vdn-h3':
             raise ValueError('Choose a generated H3 preview to finish')
-        folder = (store.assets / source['filename']).with_suffix('.artifacts')
-        if not all((folder / name).is_file() for name in ('first-pass.pt', 'first-pass.engine.json', 'video.json', 'conditioning.pt')):
+        folder = Path(source['filename']).with_suffix('.artifacts')
+        if not all(store.file_exists(folder / name) for name in ('first-pass.pt', 'first-pass.engine.json', 'video.json', 'conditioning.pt')):
             raise ValueError('This preview no longer has its saved first pass; generate a new preview')
         result = dict(source['metadata']['settings'], project_id=project_id, mode='finish', preview=False, source_video_id=source_id)
         return result
@@ -156,6 +156,7 @@ def register_video(store, asset_id, project_id, info, metadata, *, name, prompt=
     thumbnails(folder / filename, folder, info)
     metadata = {**metadata, **info}
     (folder / 'metadata.json').write_text(json.dumps(metadata, indent=2), encoding='utf-8')
+    store.seal_folder(asset_id)
     store.execute('INSERT INTO assets(id,project_id,kind,filename,thumbnail,name,prompt,model_id,width,height,seed,metadata,created) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)',
                   (asset_id, project_id, kind, f'{asset_id}/{filename}', f'{asset_id}/poster.png', name, prompt, model_id,
                    info['width'], info['height'], seed, json.dumps(metadata), now()))
@@ -167,7 +168,7 @@ def upload_media(store, source, project_id):
     suffix = Path(source.filename or '').suffix.lower()
     if suffix not in {'.mp4', '.webm', '.mov', '.wav', '.mp3', '.m4a', '.ogg', '.flac'}:
         raise ValueError('Use MP4, WebM, MOV, WAV, MP3, M4A, OGG or FLAC')
-    asset_id = identifier(); folder = store.assets / asset_id; folder.mkdir()
+    asset_id = identifier(); folder = store.output_folder(asset_id)
     filename = 'reference' + suffix; path = folder / filename
     try:
         total = 0

@@ -22,6 +22,17 @@ export interface Operation {
   error: string | null;
 }
 export interface Model {
+  plugin_id?: string;
+  source_url?: string;
+  setup_hint?: string;
+  modes?: GenerationRequest["mode"][];
+  edit_kind?: "img2img" | "instruction";
+  max_size?: number;
+  image_options?: {
+    guidance?: { min: number; max: number; default: number };
+    strength?: { min: number; max: number; default: number };
+    negative_prompt?: { default: string };
+  };
   service: "images" | "3d" | "video";
   id: string;
   name: string;
@@ -47,10 +58,19 @@ export interface Model {
   operation: Operation | null;
 }
 export interface GenerationRequest {
+  edit_mask_id?: string;
+  mask_feather?: number;
+  model_options?: {
+    guidance?: number;
+    strength?: number;
+    negative_prompt?: string;
+  };
   pixelation?: { block_size: number; colors: number };
   use_style?: boolean;
   use_style_reference?: boolean;
   user_prompt?: string;
+  style_prompt?: string;
+  style_reference_id?: string | null;
   game_asset?: GameAsset;
   project_id: string;
   model_id: string;
@@ -66,8 +86,9 @@ export interface GenerationRequest {
   transparent_background: boolean;
 }
 export interface Asset {
+  personal?: boolean;
   temporary?: boolean;
-  kind: "generated" | "reference" | "mesh" | "video" | "media-reference";
+  kind: "generated" | "reference" | "mesh" | "video" | "media-reference" | "mask";
   id: string;
   project_id: string;
   name: string;
@@ -146,6 +167,9 @@ export interface MeshTexture {
   height: number;
 }
 export interface Status {
+  network_urls?: string[];
+  personal?: boolean;
+  personal_configured?: boolean;
   features?: string[];
   temporary: boolean;
   cleanup_error?: string;

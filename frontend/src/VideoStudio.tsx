@@ -19,6 +19,7 @@ import {
 } from "lucide-react";
 import { api, patch, post } from "./api";
 import { Modal } from "./ui";
+import { AssetDeleteDialog } from "./AssetDeleteDialog";
 import VideoPlayer from "./VideoPlayer";
 import type { Asset, Job, Snapshot, VideoRequest } from "./types";
 import "./video.css";
@@ -59,7 +60,7 @@ export default function VideoStudio({
 }) {
   const [form, setForm] = useState(() => {
     try {
-      if (snapshot.status?.temporary) return defaults;
+      if (snapshot.status?.temporary || snapshot.status?.personal) return defaults;
       return {
         ...defaults,
         ...JSON.parse(
@@ -76,6 +77,7 @@ export default function VideoStudio({
   const [refs, setRefs] = useState<Asset[]>([]);
   const [assets, setAssets] = useState<Asset[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<Asset | null>(null);
   const [filter, setFilter] = useState("all");
   const [query, setQuery] = useState("");
   const [busy, setBusy] = useState(false);
@@ -116,7 +118,7 @@ export default function VideoStudio({
     return () => clearTimeout(timer);
   }, [loadAssets, snapshot.jobs]);
   useEffect(() => {
-    if (snapshot.status?.temporary) return;
+    if (snapshot.status?.temporary || snapshot.status?.personal) return;
     localStorage.setItem(`atelier.video.${projectId}`, JSON.stringify(form));
   }, [form, projectId]);
   useEffect(() => {
@@ -703,7 +705,7 @@ export default function VideoStudio({
                   </button>
                 </div>
                 <div className="video-result-actions">
-                  <button className="secondary" onClick={() => void reuse()}>
+                  <button className="secondary" disabled={!!selected.deleted} onClick={() => void reuse()}>
                     <RefreshCw size={15} /> {t("Use settings")}{" "}
                   </button>
                   {selected.metadata.preview && !selected.deleted ? (
@@ -737,7 +739,7 @@ export default function VideoStudio({
                       selected.deleted ? "Restore clip" : "Move clip to trash",
                     )}
                     onClick={() =>
-                      void updateAsset({ deleted: !selected.deleted })
+                      selected.deleted ? void updateAsset({ deleted: false }) : setDeleteTarget(selected)
                     }
                   >
                     {selected.deleted ? (
@@ -746,6 +748,9 @@ export default function VideoStudio({
                       <Trash2 size={17} />
                     )}
                   </button>
+                  {!!selected.deleted && <button className="quiet danger" onClick={() => setDeleteTarget(selected)}>
+                    <Trash2 size={17} />{t("Delete permanently")}
+                  </button>}
                 </div>
                 {selected.metadata.preview ? (
                   <p className="video-hint">
@@ -1005,6 +1010,14 @@ export default function VideoStudio({
           </dl>
         </Modal>
       )}
+      {deleteTarget && <AssetDeleteDialog asset={deleteTarget} onClose={() => setDeleteTarget(null)}
+        onDeleted={(asset) => {
+          setDeleteTarget(null); setDialog(null);
+          setAssets((items) => items.filter((item) => item.id !== asset.id));
+          if (selectedId === asset.id) setSelectedId(null);
+          void loadAssets(); void refresh();
+          notify(asset.deleted ? "Generation deleted permanently" : "Generation moved to Trash");
+        }} />}
     </div>
   );
 }

@@ -18,6 +18,7 @@ import {
   Wind,
 } from "lucide-react";
 import { Modal } from "./ui";
+import { studioFetch } from "./api";
 import type { Asset, GameAsset } from "./types";
 
 export const defaultGameAsset: GameAsset = {
@@ -321,7 +322,7 @@ export function GameControls({
 }
 
 function readWorkshop(asset: Asset, total: number) {
-  if (asset.temporary) return {};
+  if (asset.temporary || asset.personal) return {};
   try {
     const v = JSON.parse(
       localStorage.getItem("atelier.workshop." + asset.id) || "{}",
@@ -403,7 +404,7 @@ export function GameWorkbench({
     const timer = setTimeout(async () => {
       setLoading(true);
       try {
-        const r = await fetch(
+        const r = await studioFetch(
           `/api/assets/${asset.id}/game-export?preview=true`,
           {
             method: "POST",
@@ -441,7 +442,7 @@ export function GameWorkbench({
     return () => clearInterval(timer);
   }, [playing, total, fps]);
   useEffect(() => {
-    if (asset.temporary) return;
+    if (asset.temporary || asset.personal) return;
     try {
       localStorage.setItem(
         "atelier.workshop." + asset.id,
@@ -469,7 +470,7 @@ export function GameWorkbench({
     setBusy(true);
     setError("");
     try {
-      const response = await fetch(`/api/assets/${asset.id}/game-export`, {
+      const response = await studioFetch(`/api/assets/${asset.id}/game-export`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -771,7 +772,7 @@ export function GameWorkbench({
                 setBusy(true);
                 setError("");
                 try {
-                  const response = await fetch(
+                  const response = await studioFetch(
                     `/api/assets/${asset.id}/game-frame`,
                     {
                       method: "POST",

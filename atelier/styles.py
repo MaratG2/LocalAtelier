@@ -25,6 +25,12 @@ def apply_style(data, store):
     data = dict(data)
     use_style = data.pop('use_style', True)
     use_reference = data.pop('use_style_reference', True)
+    reused_style = data.pop('style_prompt_override', None)
+    reused_reference = data.pop('style_reference_override', None)
+    if reused_style is not None and (not isinstance(reused_style, str) or len(reused_style) > 4000):
+        raise ValueError('Style prompt must contain 0–4,000 characters')
+    if reused_reference is not None and not isinstance(reused_reference, str):
+        raise ValueError('Choose an available style reference image')
     if not isinstance(use_style, bool) or not isinstance(use_reference, bool):
         raise ValueError('Style options must be true or false')
     project = store.project(data.get('project_id', 'inbox')) if isinstance(data.get('project_id', 'inbox'), str) else None
@@ -32,12 +38,18 @@ def apply_style(data, store):
     style = ''
     reference = None
     if project and use_style:
-        style = project['style_prompt'] or (store.setting('style_prompt', '') if project['inherit_style'] else '')
+        style = reused_style if reused_style is not None else project['style_prompt'] or (store.setting('style_prompt', '') if project['inherit_style'] else '')
         if style and isinstance(original, str):
             data['prompt'] = original + '\n\nArt direction: ' + style
     # Text editing is an explicit override: never inject a second image into Edit.
-    if project and use_reference and data.get('mode', 't2i') != 'edit':
-        reference = project['style_reference_id']
+    from .plugins import catalog_for
+    model_id = data.get('model_id')
+    model = catalog_for(store).get(model_id, {}) if isinstance(model_id, str) else {}
+    supports_reference = 'reference' in model.get('modes', ['t2i', 'edit', 'reference'])
+    if project and supports_reference and data.get('mode', 't2i') != 'edit':
+        reference = project['style_reference_id'] if use_reference else None
+        if reused_reference and isinstance(data.get('reference_ids'), list) and reused_reference in data['reference_ids']:
+            reference = reused_reference
         if reference:
             asset = store.asset(reference)
             if not asset or asset['deleted']:

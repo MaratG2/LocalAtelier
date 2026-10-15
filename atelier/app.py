@@ -5,6 +5,7 @@ import shutil
 import subprocess
 import time
 import threading
+from contextlib import nullcontext
 from pathlib import Path
 
 from flask import Flask, g, jsonify, request, send_from_directory, send_file
@@ -18,6 +19,8 @@ from .runtime import Runtime
 from .storage import Store, identifier, now
 from .privacy import SessionRouter
 from .styles import project_style
+from .plugins import PluginRegistry, catalog_for
+from .network import local_interfaces, permitted_peer
 
 
 def object_body():
@@ -36,38 +39,82 @@ def text_field(value, name, limit, empty=False):
 def create_app(data_root=None, project_root=None, runtime_factory=Runtime):
     root = Path(project_root or Path(__file__).resolve().parents[1])
     store = SessionRouter(Store(data_root or root / "data"))
+    store.plugins = PluginRegistry(root)
+    store.catalog = store.plugins.catalog
     runtime = runtime_factory(store)
+    store.runtime = runtime
     models = ModelManager(store, root, runtime)
     jobs = GenerationQueue(store, runtime, models)
     app = Flask(__name__, static_folder=None)
-    app.config.update(MAX_CONTENT_LENGTH=66 * 1024 * 1024, TRUSTED_HOSTS=["localhost", "127.0.0.1", "[::1]"])
+    interfaces = local_interfaces()
+    lan_enabled = os.environ.get('ATELIER_LOCAL_ONLY', '') != '1'
+    app.config.update(MAX_CONTENT_LENGTH=66 * 1024 * 1024, LAN_ENABLED=lan_enabled,
+                      TRUSTED_HOSTS=["localhost", "127.0.0.1", "[::1]"] +
+                      ([item['address'] for item in interfaces] if lan_enabled else []))
     app.extensions.update(store=store, runtime=runtime, models=models, jobs=jobs)
     hardware = {"at": 0, "value": {}}
     threading.Thread(target=store.expire, args=(jobs,), daemon=True).start()
 
     @app.before_request
     def origin_guard():
+        if not permitted_peer(request.remote_addr, interfaces, lan_enabled):
+            return jsonify(error='Studio access is limited to this computer and its local network.'), 403
         if app.config.get('STUDIO_STOPPING') and request.method not in {'GET', 'HEAD', 'OPTIONS'}:
             return jsonify(error='Local Atelier is updating. Try again in a moment.'), 503
-        key = request.cookies.get('atelier_temporary')
-        session = store.sessions.get(key)
+        if request.path.startswith('/api/') and request.method not in {'GET', 'HEAD', 'OPTIONS'}:
+            origin = request.headers.get('Origin')
+            if origin and origin not in {request.host_url.rstrip('/'), 'http://127.0.0.1:5175', 'http://localhost:5175'}:
+                return jsonify(error='Cross-origin requests are not allowed'), 403
+        personal_key = request.cookies.get('atelier_personal')
+        key = personal_key or request.cookies.get('atelier_temporary')
+        with store.lock:
+            session = store.sessions.get(key)
+            if session and session.personal and time.monotonic() - session.touched > 900:
+                store.close(key, jobs)
+                session = None
+            if session and session.personal and not session.closed:
+                session.readers += 1
+                g.personal_reader = session
         g.session_context = store.context.set(key if session and not session.closed else None)
-        if session and not session.closed:
+        if session and not session.closed and not session.personal:
             session.touched = time.monotonic()
-        g.expired_session = bool(key and (not session or session.closed))
+        is_personal_route = request.path.startswith('/api/personal')
+        if request.path.startswith('/api/') and not is_personal_route:
+            if personal_key and (not session or session.closed):
+                return jsonify(error='Personal space is locked. Enter your password to continue.', code='space_locked'), 423
+            expected = request.headers.get('X-Atelier-Space')
+            actual = 'personal' if store.personal else 'temporary' if store.temporary else 'public'
+            if expected and expected != actual:
+                return jsonify(error='Workspace changed in another tab. Reload the studio.', code='space_changed'), 409
+        g.expired_session = bool(key and not personal_key and (not session or session.closed))
         if g.expired_session and request.method not in {'GET', 'HEAD'} and request.path.startswith('/api/') and not request.path.startswith('/api/temporary'):
             return jsonify(error='Temporary session ended. Reload the studio.'), 410
         if request.path.startswith("/api/") and request.method not in {"GET", "HEAD", "OPTIONS"}:
             origin = request.headers.get("Origin")
             if origin and origin not in {request.host_url.rstrip("/"), "http://127.0.0.1:5175", "http://localhost:5175"}:
                 return jsonify(error="Cross-origin requests are not allowed"), 403
-            if store.temporary and (request.path.startswith('/api/projects') or request.path.startswith('/api/models') or request.path == '/api/settings'):
+            if store.temporary and (request.path.startswith('/api/projects') or request.path.startswith('/api/models') or request.path.startswith('/api/plugins') or request.path == '/api/settings'):
                 raise ValueError('End temporary mode before changing projects, models or settings')
+        g.file_scope = store.file_scope()
+        g.file_scope.__enter__()
 
     @app.teardown_request
     def reset_session(error):
-        if hasattr(g, 'session_context'):
-            store.context.reset(g.session_context)
+        try:
+            if hasattr(g, 'file_scope'):
+                try:
+                    g.file_scope.__exit__(None, None, None)
+                except OSError:
+                    store.cleanup_error = 'Temporary file cleanup is pending. Close the studio workers and restart to retry.'
+        finally:
+            try:
+                if hasattr(g, 'personal_reader'):
+                    with store.lock:
+                        g.personal_reader.readers -= 1
+                        store.reap()
+            finally:
+                if hasattr(g, 'session_context'):
+                    store.context.reset(g.session_context)
 
     @app.after_request
     def private_response(response):
@@ -76,11 +123,53 @@ def create_app(data_root=None, project_root=None, runtime_factory=Runtime):
         if request.path.startswith('/api/'):
             response.headers['Cache-Control'] = 'no-store'
             response.headers['Vary'] = 'Cookie'
+            response.headers['Referrer-Policy'] = 'no-referrer'
+        return response
+
+    def personal_response():
+        return dict(configured=store.vault.configured, unlocked=store.personal and not store.current.closed, idle_minutes=15)
+
+    @app.get('/api/personal')
+    def personal_status():
+        return jsonify(personal_response())
+
+    @app.post('/api/personal/<action>')
+    def personal_action(action):
+        if action == 'lock':
+            store.close(request.cookies.get('atelier_personal'), jobs)
+            response = jsonify(configured=store.vault.configured, unlocked=False)
+            response.delete_cookie('atelier_personal')
+            return response
+        if store.temporary:
+            raise ValueError('End incognito mode before opening personal space.')
+        if action == 'touch':
+            if not store.personal or store.current.closed:
+                return jsonify(error='Personal space is locked.', code='space_locked'), 423
+            store.current.touched = time.monotonic()
+            return jsonify(ok=True)
+        body = object_body()
+        if action == 'password':
+            if not store.personal:
+                return jsonify(error='Unlock personal space before changing its password.'), 403
+            store.vault.change_password(body.get('current_password'), body.get('password'))
+            return jsonify(personal_response())
+        if action not in {'setup', 'unlock'}:
+            return jsonify(error='Endpoint not found'), 404
+        if store.personal:
+            raise ValueError('Personal space is already open.')
+        if action == 'setup':
+            store.vault.setup(body.get('password'))
+        key = store.vault.unlock(body.get('password'))
+        response = jsonify(configured=True, unlocked=True, idle_minutes=15)
+        response.set_cookie('atelier_personal', key, httponly=True, samesite='Strict', secure=request.is_secure)
+        response.delete_cookie('atelier_temporary')
         return response
 
     @app.route('/api/temporary', methods=['GET', 'POST', 'DELETE'])
     def temporary_session():
         if request.method == 'POST':
+            if store.personal:
+                raise ValueError('Lock personal space before starting incognito mode.')
             key = request.cookies.get('atelier_temporary')
             if key in store.sessions and not store.sessions[key].closed:
                 return jsonify(temporary=True)
@@ -121,9 +210,10 @@ def create_app(data_root=None, project_root=None, runtime_factory=Runtime):
             except (OSError, ValueError, IndexError, subprocess.TimeoutExpired):
                 pass
             hardware.update(at=time.monotonic(), value=value)
-        return jsonify(name="Local Atelier", version="0.4.0", temporary=store.temporary, cleanup_error=store.cleanup_error, hardware=hardware["value"], active_model=runtime.active_model,
-                       runtime_phase=runtime.phase, services=SERVICES, data_path=str(store.root), features=['image-pixelation'],
-                       launcher=app.config.get('LAUNCHER', {'managed': False}))
+        return jsonify(name="Local Atelier", version="0.4.0", temporary=store.temporary, personal=store.personal, personal_configured=store.vault.configured, cleanup_error=store.cleanup_error, hardware=hardware["value"], active_model=runtime.active_model,
+                       runtime_phase=runtime.phase if not any(s.personal and s.working for s in store.sessions.values()) or store.personal else 'Working in personal space', services=SERVICES, data_path=str(store.vault.folder if store.personal else store.root), features=['image-pixelation', 'encrypted-personal-space'],
+                       launcher=app.config.get('LAUNCHER', {'managed': False}),
+                       network_urls=[f"http://{item['address']}:{int(request.environ['SERVER_PORT'])}/" for item in interfaces] if lan_enabled else [])
 
     @app.route("/api/projects", methods=["GET", "POST"])
     def projects_route():
@@ -205,6 +295,29 @@ def create_app(data_root=None, project_root=None, runtime_factory=Runtime):
             raise ValueError("The image could not be read") from error
         return jsonify(save_image(store, converted, project_id, kind="reference", name=(source.filename or "Reference")[:120])), 201
 
+    @app.post('/api/edit-masks')
+    def upload_edit_mask():
+        asset = store.asset(request.form.get('source_id', ''))
+        if not asset or asset['deleted'] or asset['kind'] not in {'reference', 'generated'}:
+            raise ValueError('Choose an image to edit first.')
+        source = request.files.get('mask')
+        if not source:
+            raise ValueError('Paint an area to edit first.')
+        raw = source.read(24 * 1024 * 1024 + 1)
+        if len(raw) > 24 * 1024 * 1024:
+            raise ValueError('Images must be at most 24 MB')
+        try:
+            with Image.open(io.BytesIO(raw)) as image:
+                if image.format != 'PNG' or image.size != (asset['width'], asset['height']):
+                    raise ValueError('The mask must match the source image size.')
+                mask = image.convert('L')
+                if not mask.getbbox():
+                    raise ValueError('Paint an area to edit first.')
+        except (UnidentifiedImageError, OSError, Image.DecompressionBombError) as error:
+            raise ValueError('The mask could not be read.') from error
+        return jsonify(save_image(store, mask, asset['project_id'], kind='mask', name='Edit mask',
+                                  metadata={'source_id': asset['id']})), 201
+
     @app.get("/api/assets/<asset_id>")
     def asset_details(asset_id):
         asset = store.asset(asset_id)
@@ -221,7 +334,7 @@ def create_app(data_root=None, project_root=None, runtime_factory=Runtime):
             return jsonify({**asset["metadata"], "prompt": asset["prompt"], "model_id": asset["model_id"]})
         filename = asset["thumbnail"] if variant == "thumbnail" else asset["filename"]
         extension = Path(filename).suffix.lstrip('.')
-        return send_file(store.assets / filename, as_attachment=request.args.get("download") == "true", download_name=f"atelier-{asset['seed'] or asset_id[:8]}.{extension}", max_age=0)
+        return send_file(store.open_media(filename), as_attachment=request.args.get("download") == "true", download_name=f"atelier-{asset['seed'] or asset_id[:8]}.{extension}", max_age=0)
 
     @app.route('/api/assets/<asset_id>/game-export', methods=['GET', 'POST'])
     def game_export(asset_id):
@@ -247,7 +360,7 @@ def create_app(data_root=None, project_root=None, runtime_factory=Runtime):
         if not tool or tool['kind'] != 'spritesheet':
             raise ValueError('Choose a character sheet first')
         index = integer(object_body().get('index'), 'Frame', 0, tool.get('count', tool['columns'] * tool['rows']) - 1)
-        with Image.open(store.assets / asset['filename']) as source:
+        with Image.open(store.open_media(asset['filename'])) as source:
             x, y = index % tool['columns'], index // tool['columns']
             frame = source.crop((round(x * source.width / tool['columns']), round(y * source.height / tool['rows']),
                                  round((x + 1) * source.width / tool['columns']), round((y + 1) * source.height / tool['rows'])))
@@ -278,7 +391,7 @@ def create_app(data_root=None, project_root=None, runtime_factory=Runtime):
         asset = store.asset(asset_id)
         if not asset or asset['kind'] != 'video':
             return jsonify(error='Video not found'), 404
-        return send_from_directory(store.assets / asset_id, 'filmstrip.jpg', max_age=86400)
+        return send_file(store.open_media(f'{asset_id}/filmstrip.jpg'), mimetype='image/jpeg', max_age=0)
 
     @app.get('/api/videos/<asset_id>/audio')
     def video_audio(asset_id):
@@ -288,7 +401,8 @@ def create_app(data_root=None, project_root=None, runtime_factory=Runtime):
         if not asset or asset['kind'] != 'video' or not asset['metadata'].get('has_audio'):
             return jsonify(error='Audio not found'), 404
         buffer = io.BytesIO()
-        with av.open(str(store.assets / asset['filename'])) as container, wave.open(buffer, 'wb') as output:
+        media = store.open_media(asset['filename'])
+        with av.open(str(media) if isinstance(media, Path) else media) as container, wave.open(buffer, 'wb') as output:
             output.setnchannels(2); output.setsampwidth(2); output.setframerate(32000)
             resampler = av.AudioResampler(format='s16', layout='stereo', rate=32000)
             for frame in container.decode(audio=0):
@@ -337,7 +451,7 @@ def create_app(data_root=None, project_root=None, runtime_factory=Runtime):
         asset = mesh_asset(asset_id)
         if name not in {item["name"] for item in asset["metadata"].get("textures", [])}:
             return jsonify(error="Texture not found"), 404
-        return send_from_directory(store.assets / asset_id, name, max_age=86400)
+        return send_file(store.open_media(f'{asset_id}/{name}'), mimetype='image/png', max_age=0)
 
     @app.post("/api/meshes/<asset_id>/preview")
     def mesh_preview(asset_id):
@@ -354,7 +468,7 @@ def create_app(data_root=None, project_root=None, runtime_factory=Runtime):
                     raise ValueError("Use a PNG preview up to 1024 pixels")
                 preview = image.convert("RGB")
                 preview.thumbnail((512, 512))
-                preview.save(store.assets / asset["thumbnail"], "PNG")
+                store.write_image(asset['thumbnail'], preview)
         except (UnidentifiedImageError, OSError, Image.DecompressionBombError) as error:
             raise ValueError("Invalid preview image") from error
         metadata = {**asset["metadata"], "preview_rendered": True, "preview_updated": now()}
@@ -379,10 +493,21 @@ def create_app(data_root=None, project_root=None, runtime_factory=Runtime):
             else:
                 raise ValueError("Unsupported image setting")
         if values:
-            if values.get("deleted") and store.one("SELECT id FROM jobs WHERE status IN ('queued','running') AND request LIKE ?", (f'%"{asset_id}"%',)):
-                raise ValueError("This asset is referenced by a queued or running job")
-            store.execute(f"UPDATE assets SET {','.join(key+'=?' for key in values)} WHERE id=?", (*values.values(), asset_id))
+            with jobs.lock:
+                if values.get('deleted'):
+                    from .asset_deletion import ensure_unused
+                    ensure_unused(store, [asset_id])
+                store.execute(f"UPDATE assets SET {','.join(key+'=?' for key in values)} WHERE id=?", (*values.values(), asset_id))
         return jsonify(store.asset(asset_id))
+
+    @app.delete('/api/assets/<asset_id>')
+    def asset_delete(asset_id):
+        if not store.current.one('SELECT id FROM assets WHERE id=?', (asset_id,)):
+            return jsonify(error='Generation not found in this workspace'), 404
+        from .asset_deletion import delete_asset
+        with jobs.lock:
+            delete_asset(store, asset_id)
+        return jsonify(ok=True)
 
     @app.route("/api/jobs", methods=["GET", "POST"])
     def jobs_route():
@@ -400,14 +525,30 @@ def create_app(data_root=None, project_root=None, runtime_factory=Runtime):
     def models_route():
         return jsonify(models.list())
 
+    @app.get('/api/plugins')
+    def plugins_route():
+        return jsonify(store.plugins.status())
+
+    @app.post('/api/plugins/refresh')
+    def refresh_plugins():
+        with models.lock, jobs.lock:
+            if any(op['status'] == 'running' for op in models.operations.values()) or store.one("SELECT id FROM jobs WHERE status IN ('queued','running') LIMIT 1"):
+                raise ValueError('Wait for model operations and generation to finish')
+            with runtime.lock if hasattr(runtime, 'lock') else nullcontext():
+                if runtime.active_model and runtime.active_model.startswith('addon.'):
+                    runtime.release()
+                registry = PluginRegistry(root)
+                store.plugins, store.catalog = registry, registry.catalog
+        return jsonify(registry.status())
+
     @app.post("/api/models/<model_id>/<action>")
     def model_operation(model_id, action):
         return jsonify(models.start(model_id, action)), 202
 
     @app.delete("/api/models/<model_id>")
     def model_remove(model_id):
-        from .catalog import CATALOG
-        if model_id not in CATALOG or object_body().get("confirmation") != CATALOG[model_id]["name"]:
+        catalog = catalog_for(store)
+        if model_id not in catalog or object_body().get("confirmation") != catalog[model_id]["name"]:
             raise ValueError("Confirm the model name before removing it")
         models.remove(model_id)
         return jsonify(ok=True)
@@ -423,7 +564,7 @@ def create_app(data_root=None, project_root=None, runtime_factory=Runtime):
             runtime_change = bool(set(data) - {'style_prompt'})
             if runtime_change and store.one("SELECT id FROM jobs WHERE status IN ('queued','running') LIMIT 1"):
                 raise ValueError("Wait for queued generations before changing runtime settings")
-            if runtime_change:
+            if 'low_vram' in data and data['low_vram'] != store.setting('low_vram', False):
                 runtime.release()
             for key, value in data.items():
                 store.set_setting(key, value)

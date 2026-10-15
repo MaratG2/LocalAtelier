@@ -11,6 +11,7 @@ import {
   ChevronDown,
   HardDrive,
   Layers,
+  Puzzle,
 } from "lucide-react";
 import { api, bytes, date, post } from "./api";
 import { Modal, ExternalLink } from "./ui";
@@ -34,6 +35,24 @@ export function ModelLibrary({
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const [logs, setLogs] = useState<string | null>(null);
+  const [plugins, setPlugins] = useState<{
+    plugins: { id: string; name: string; version: string; models: string[] }[];
+    errors: { id: string; error: string }[];
+  } | null>(null);
+  const loadPlugins = async (rescan = false) => {
+    setBusy(true);
+    setError("");
+    try {
+      setPlugins(
+        rescan ? await post("/plugins/refresh") : await api("/plugins"),
+      );
+      if (rescan) await refresh();
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
   const action = async (model: Model, type: string) => {
     setBusy(true);
     setError("");
@@ -81,9 +100,18 @@ export function ModelLibrary({
             )}{" "}
           </p>
         </div>
-        <button className="secondary" onClick={() => void refresh()}>
-          <RefreshCw size={18} /> {t("Refresh")}{" "}
-        </button>
+        <div className="dialog-actions">
+          <button
+            className="quiet"
+            onClick={() => void loadPlugins()}
+            disabled={busy}
+          >
+            <Puzzle size={18} /> {t("Local plugins")}
+          </button>
+          <button className="secondary" onClick={() => void refresh()}>
+            <RefreshCw size={18} /> {t("Refresh")}{" "}
+          </button>
+        </div>
       </header>
       <div className="library-summary">
         <div>
@@ -156,24 +184,31 @@ export function ModelLibrary({
                       ? "3D"
                       : m.service === "video"
                         ? "H3"
-                        : "H",
+                        : m.family.slice(0, 2),
                 )}{" "}
               </div>
               <div className="model-heading">
                 <div>
                   <h2>{m.name}</h2>
+                  {m.plugin_id && (
+                    <span className="badge muted">
+                      <Puzzle size={12} /> {t("Local plugin")}
+                    </span>
+                  )}
                   <span
                     className={`badge ${m.status === "installed" ? "green" : "muted"}`}
                   >
                     {" "}
                     {t(
-                      m.busy
-                        ? "Working"
-                        : m.status === "installed"
-                          ? "Installed"
-                          : m.status === "incomplete"
-                            ? "Incomplete"
-                            : "Available",
+                      m.setup_hint
+                        ? "Needs checkpoint"
+                        : m.busy
+                          ? "Working"
+                          : m.status === "installed"
+                            ? "Installed"
+                            : m.status === "incomplete"
+                              ? "Incomplete"
+                              : "Available",
                     )}{" "}
                   </span>
                 </div>
@@ -210,11 +245,20 @@ export function ModelLibrary({
               </span>
             </div>
             <div className="model-details">
-              <ExternalLink href={`https://huggingface.co/${m.hub_repo}`}>
-                {" "}
-                {t("Model source")}{" "}
-              </ExternalLink>
-              <ExternalLink href={m.license_url}> {t(m.license)} </ExternalLink>
+              {(m.source_url || m.hub_repo) && (
+                <ExternalLink
+                  href={m.source_url || `https://huggingface.co/${m.hub_repo}`}
+                >
+                  {" "}
+                  {t("Model source")}{" "}
+                </ExternalLink>
+              )}
+              {m.license_url && (
+                <ExternalLink href={m.license_url}>
+                  {" "}
+                  {t(m.license)}{" "}
+                </ExternalLink>
+              )}
               {m.verified ? (
                 <span className="verified">
                   <ShieldCheck size={15} /> {t("Verified")}{" "}
@@ -238,20 +282,21 @@ export function ModelLibrary({
                 <span> {t("Stored inside Local Atelier")} </span>
               </div>
             ) : null}
+            {m.setup_hint && <p className="muted-text">{t(m.setup_hint)}</p>}
             {m.operation ? (
               <div
                 className={`operation ${m.operation.status === "error" ? "failed" : ""}`}
               >
                 <div>
                   <span>
-                    {m.operation.status === t("running") ? (
+                    {m.operation.status === "running" ? (
                       <LoaderCircle size={15} className="spin" />
-                    ) : m.operation.status === t("complete") ? (
+                    ) : m.operation.status === "complete" ? (
                       <Check size={15} />
                     ) : null}{" "}
                     {t(m.operation.phase)}{" "}
                   </span>
-                  {m.operation.status === t("running") &&
+                  {m.operation.status === "running" &&
                   m.operation.progress !== null ? (
                     <strong>{m.operation.progress}%</strong>
                   ) : null}
@@ -263,7 +308,7 @@ export function ModelLibrary({
                     {t("Details")} <ChevronDown size={14} />
                   </button>
                 </div>
-                {m.operation.status === t("running") ? (
+                {m.operation.status === "running" ? (
                   <div
                     className={`progress ${m.operation.progress === null ? "indeterminate" : ""}`}
                   >
@@ -306,7 +351,7 @@ export function ModelLibrary({
                 <>
                   <button
                     className="primary"
-                    disabled={m.busy || busy}
+                    disabled={m.busy || busy || !!m.setup_hint}
                     onClick={() => open(m, "install")}
                   >
                     <Download size={17} />{" "}
@@ -353,6 +398,59 @@ export function ModelLibrary({
           </p>
         </div>
       </div>
+      {plugins && (
+        <Modal title={t("Local plugins")} onClose={() => setPlugins(null)}>
+          <div className="dialog-body form-stack">
+            <p>
+              {t(
+                "Add a trusted plugin folder under addons, then scan to show its models in this library.",
+              )}
+            </p>
+            <p className="muted-text">
+              {t(
+                "Plugin files stay local and are excluded from this repository. Plugins run code on your computer; use sources you trust.",
+              )}
+            </p>
+            {plugins.plugins.length === 0 && (
+              <p>{t("No local plugins found.")}</p>
+            )}
+            {plugins.plugins.map((plugin) => (
+              <div key={plugin.id} className="library-note">
+                <Puzzle size={20} />
+                <div>
+                  <strong>{plugin.name}</strong>
+                  <p>
+                    {plugin.version} · {t("{0} models", plugin.models.length)}
+                  </p>
+                </div>
+              </div>
+            ))}
+            {plugins.errors.map((entry) => (
+              <p className="error" role="alert" key={entry.id}>
+                {entry.id}: {entry.error}
+              </p>
+            ))}
+            {error && (
+              <p className="error" role="alert">
+                {t(error)}
+              </p>
+            )}
+            <div className="dialog-actions">
+              <button className="secondary" onClick={() => setPlugins(null)}>
+                {t("Close")}
+              </button>
+              <button
+                className="primary"
+                disabled={busy || snapshot.status?.temporary}
+                onClick={() => void loadPlugins(true)}
+              >
+                <RefreshCw size={16} />
+                {t(busy ? "Working…" : "Scan plugins")}
+              </button>
+            </div>
+          </div>
+        </Modal>
+      )}
       {dialog ? (
         <Modal
           title={
@@ -372,7 +470,9 @@ export function ModelLibrary({
                     {dialog.model.download_gb} {t("GB")}{" "}
                   </strong>{" "}
                   {t(
-                    "of weights plus an isolated GPU runtime, inside Local Atelier's models folder.",
+                    dialog.model.plugin_id
+                      ? "of weights plus an isolated GPU runtime, inside this local plugin's folder."
+                      : "of weights plus an isolated GPU runtime, inside Local Atelier's models folder.",
                   )}{" "}
                 </p>
                 <p>

@@ -17,8 +17,9 @@ import {
   Upload,
   X,
 } from "lucide-react";
-import { api, patch, post } from "./api";
+import { api, patch, post, studioFetch } from "./api";
 import { Modal } from "./ui";
+import { AssetDeleteDialog } from "./AssetDeleteDialog";
 import MeshViewer from "./MeshViewer";
 import type {
   Asset,
@@ -61,7 +62,7 @@ export default function MeshStudio({
 }) {
   const [form, setForm] = useState(() => {
     try {
-      if (snapshot.status?.temporary) return defaults;
+      if (snapshot.status?.temporary || snapshot.status?.personal) return defaults;
       return {
         ...defaults,
         ...JSON.parse(localStorage.getItem(FORM_KEY) || "{}"),
@@ -74,6 +75,7 @@ export default function MeshStudio({
   const [reference, setReference] = useState<Asset | null>(null);
   const [assets, setAssets] = useState<Asset[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<Asset | null>(null);
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState("all");
   const [error, setError] = useState("");
@@ -118,7 +120,7 @@ export default function MeshStudio({
     return () => clearTimeout(timer);
   }, [loadAssets, snapshot.jobs]);
   useEffect(() => {
-    if (snapshot.status?.temporary) return;
+    if (snapshot.status?.temporary || snapshot.status?.personal) return;
     localStorage.setItem(FORM_KEY, JSON.stringify(form));
   }, [form]);
   useEffect(() => {
@@ -238,7 +240,7 @@ export default function MeshStudio({
     setExporting(format);
     setError("");
     try {
-      const response = await fetch(
+      const response = await studioFetch(
         `/api/meshes/${selected.id}/export?format=${format}`,
       );
       if (!response.ok)
@@ -775,6 +777,12 @@ export default function MeshStudio({
                 </div>
               </>
             )}
+            <button className={selected.deleted ? "quiet danger" : "icon-btn danger"}
+              aria-label={t(selected.deleted ? "Delete permanently" : "Move to trash")}
+              title={t(selected.deleted ? "Delete permanently" : "Move to trash")}
+              onClick={() => setDeleteTarget(selected)}>
+              <Trash2 size={17} />{selected.deleted ? t("Delete permanently") : null}
+            </button>
           </div>
         </footer>
       ) : (
@@ -1015,15 +1023,29 @@ export default function MeshStudio({
               </a>
               <button
                 className="quiet"
-                onClick={() => void changeAsset({ deleted: !selected.deleted })}
+                onClick={() => {
+                  if (selected.deleted) void changeAsset({ deleted: false });
+                  else { setDeleteTarget(selected); setDialog(null); }
+                }}
               >
                 <Trash2 size={16} />{" "}
                 {t(selected.deleted ? "Restore" : "Move to trash")}{" "}
               </button>
+              {!!selected.deleted && <button className="quiet danger" onClick={() => {
+                setDeleteTarget(selected); setDialog(null);
+              }}><Trash2 size={16} />{t("Delete permanently")}</button>}
             </div>
           </div>
         </Modal>
       )}
+      {deleteTarget && <AssetDeleteDialog asset={deleteTarget} onClose={() => setDeleteTarget(null)}
+        onDeleted={(asset) => {
+          setDeleteTarget(null); setDialog(null);
+          setAssets((items) => items.filter((item) => item.id !== asset.id));
+          if (selectedId === asset.id) setSelectedId(null);
+          void loadAssets(); void refresh();
+          notify(asset.deleted ? "Generation deleted permanently" : "Generation moved to Trash");
+        }} />}
     </div>
   );
 }
